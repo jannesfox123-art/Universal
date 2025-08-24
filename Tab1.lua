@@ -19,7 +19,7 @@ return function(parent, settings)
     frame.BackgroundTransparency = 1
     frame.Parent = parent
 
-    -- Scrollbarer Container
+    -- Scrollbarer Container (damit viele Controls reinpassen)
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1, -40, 1, -40)
     scroll.Position = UDim2.new(0, 20, 0, 20)
@@ -50,6 +50,7 @@ return function(parent, settings)
     local TEXT_SIZE = settings.TextSize or 16
 
     -- ==== COMPONENTS ====
+    -- Label
     local function makeLabel(text)
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(1, -10, 0, 24)
@@ -63,6 +64,7 @@ return function(parent, settings)
         return lbl
     end
 
+    -- Toggle Switch (schöner Schalter mit animiertem Knopf)
     local function makeToggle(title, default, onChange)
         local row = Instance.new("Frame")
         row.Size = UDim2.new(1, -10, 0, 40)
@@ -71,6 +73,7 @@ return function(parent, settings)
         row.Parent = scroll
         local rowCorner = Instance.new("UICorner", row); rowCorner.CornerRadius = UDim.new(0, 8)
 
+        -- Hover Effekt
         row.MouseEnter:Connect(function()
             TweenService:Create(row, TweenInfo.new(0.15), {BackgroundColor3 = THEME.TabButtonHover}):Play()
         end)
@@ -127,6 +130,7 @@ return function(parent, settings)
             end
         end
 
+        -- Click Handler (auf Reihe und Switch)
         local function hookClickable(gui)
             gui.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -144,6 +148,7 @@ return function(parent, settings)
         }
     end
 
+    -- Slider (mit Fill und Knob)
     local function makeSlider(title, min, max, default, onChange)
         local container = Instance.new("Frame")
         container.Size = UDim2.new(1, -10, 0, 58)
@@ -202,19 +207,28 @@ return function(parent, settings)
             return (x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
         end
 
+        -- Drag handlers
+        local function beginDrag(input)
+            dragging = true
+            setValueFromAlpha(getAlphaFromMouse(input.Position.X))
+        end
+        local function endDrag()
+            dragging = false
+        end
+
         bar.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                setValueFromAlpha(getAlphaFromMouse(input.Position.X))
+                beginDrag(input)
             end
         end)
         knob.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                setValueFromAlpha(getAlphaFromMouse(input.Position.X))
+                beginDrag(input)
             end
         end)
         UserInputService.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = false
+                endDrag()
             end
         end)
         UserInputService.InputChanged:Connect(function(input)
@@ -233,6 +247,7 @@ return function(parent, settings)
         }
     end
 
+    -- ==== STATE & CONNECTION MGMT ====
     local conns = {}
     local function bind(event, fn)
         local c = event:Connect(fn)
@@ -244,29 +259,36 @@ return function(parent, settings)
         table.clear(conns)
     end
 
-    local originalCollision = {}
+    local originalCollision = {} -- part -> bool
     local function setCharacter(collRestore)
         character = player.Character or player.CharacterAdded:Wait()
         humanoid = character:WaitForChild("Humanoid")
         rootPart = character:WaitForChild("HumanoidRootPart")
         originalCollision = {}
+        if collRestore then
+            -- restore any previous transparency/values if nötig
+        end
     end
 
     player.CharacterAdded:Connect(function()
+        -- bei Respawn: States erneut anwenden
         task.wait(0.5)
         setCharacter(true)
+        -- Re-apply active toggles
         if toggles.Fly and toggles.Fly.Get() then startFly() end
         if toggles.Noclip and toggles.Noclip.Get() then enableNoclip(true) end
         if toggles.InfiniteJump and toggles.InfiniteJump.Get() then enableInfiniteJump(true) end
+        -- Sliders werden automatisch greifen, wenn Values gesetzt werden
         if sliders.WalkSpeed then humanoid.WalkSpeed = sliders.WalkSpeed.Get() end
         if sliders.JumpPower then humanoid.JumpPower = sliders.JumpPower.Get() end
     end)
 
-    -- ==== FEATURES ====
+    -- ==== FEATURES IMPLEMENTATION ====
     local toggles = {}
     local sliders = {}
 
-    local flyConn
+    -- Fly
+    local flyConn -- RenderStepped loop
     local bodyGyro, bodyVel
     local flySpeed = 50
     local function startFly()
@@ -298,7 +320,8 @@ return function(parent, settings)
                 dir -= Vector3.new(0,1,0)
             end
 
-            bodyVel.Velocity = dir.Magnitude > 0 and dir.Unit * flySpeed or Vector3.zero
+            bodyVel.Velocity = dir.Unit * flySpeed
+            if dir.Magnitude == 0 then bodyVel.Velocity = Vector3.zero end
         end)
     end
     local function stopFly()
@@ -307,9 +330,11 @@ return function(parent, settings)
         if bodyVel then bodyVel:Destroy(); bodyVel = nil end
     end
 
+    -- Noclip (mit Restore der Kollisionen)
     local noclipConn
     local function enableNoclip(enable)
         if enable then
+            -- Cache Originalzustände
             originalCollision = {}
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
@@ -338,6 +363,7 @@ return function(parent, settings)
         end
     end
 
+    -- Infinite Jump
     local ijConn
     local function enableInfiniteJump(enable)
         if enable then
@@ -353,9 +379,56 @@ return function(parent, settings)
         end
     end
 
-    -- ==== UI ====
+    -- God Mode
+    local godConn
+    local function enableGodMode(enable)
+        if enable then
+            humanoid.MaxHealth = math.huge
+            humanoid.Health = math.huge
+            if not godConn then
+                godConn = bind(humanoid.HealthChanged, function()
+                    if humanoid.Health < humanoid.MaxHealth * 0.99 then
+                        humanoid.Health = humanoid.MaxHealth
+                    end
+                end)
+            end
+        else
+            if godConn then godConn:Disconnect(); godConn = nil end
+            -- optional: zurücksetzen auf Standard
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+        end
+    end
+
+    -- Sprint (Shift halten)
+    local sprintEnabled = false
+    local baseWalkSpeed = humanoid.WalkSpeed
+    local sprintSpeed = 60
+    local shiftDown = false
+    local function applySprint()
+        if not humanoid then return end
+        if sprintEnabled and shiftDown then
+            humanoid.WalkSpeed = sprintSpeed
+        else
+            humanoid.WalkSpeed = baseWalkSpeed
+        end
+    end
+    bind(UserInputService.InputBegan, function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Enum.KeyCode.LeftShift then
+            shiftDown = true; applySprint()
+        end
+    end)
+    bind(UserInputService.InputEnded, function(input)
+        if input.KeyCode == Enum.KeyCode.LeftShift then
+            shiftDown = false; applySprint()
+        end
+    end)
+
+    -- ==== UI CONTROLS ====
     makeLabel("Local Player — Movement & Utils")
 
+    -- Toggles
     toggles.Fly = makeToggle("Fly (WASD + Space/Shift)", false, function(on)
         if on then startFly() else stopFly() end
     end)
@@ -368,8 +441,26 @@ return function(parent, settings)
         enableInfiniteJump(on)
     end)
 
+    toggles.GodMode = makeToggle("God Mode (Health lock)", false, function(on)
+        enableGodMode(on)
+    end)
+
+    toggles.Sprint = makeToggle("Sprint (hold Shift)", false, function(on)
+        sprintEnabled = on
+        applySprint()
+    end)
+
+    -- Sliders
     sliders.WalkSpeed = makeSlider("WalkSpeed", 16, 300, humanoid.WalkSpeed, function(v)
-        humanoid.WalkSpeed = v
+        baseWalkSpeed = v
+        if not sprintEnabled or not shiftDown then
+            humanoid.WalkSpeed = v
+        end
+    end)
+
+    sliders.SprintSpeed = makeSlider("Sprint Speed", 20, 300, sprintSpeed, function(v)
+        sprintSpeed = v
+        applySprint()
     end)
 
     sliders.JumpPower = makeSlider("JumpPower", 25, 300, humanoid.JumpPower, function(v)
@@ -388,6 +479,14 @@ return function(parent, settings)
         camera.FieldOfView = v
     end)
 
+    sliders.Transparency = makeSlider("Character Transparency", 0, 100, 0, function(v)
+        local tv = v / 100
+        for _, p in ipairs(character:GetDescendants()) do
+            if p:IsA("BasePart") then p.Transparency = tv end
+        end
+    end)
+
+    -- Utility Buttons (in einer Reihe wie Toggle-Row)
     local function makeBtn(text, callback)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, -10, 0, 40)
@@ -411,6 +510,14 @@ return function(parent, settings)
         return btn
     end
 
+    makeBtn("Teleport to Mouse Cursor", function()
+        local mouse = player:GetMouse()
+        if mouse.Hit and rootPart then
+            local target = mouse.Hit.p + Vector3.new(0, 3, 0)
+            character:MoveTo(target)
+        end
+    end)
+
     makeBtn("Sit / Stand", function()
         if humanoid then humanoid.Sit = not humanoid.Sit end
     end)
@@ -424,26 +531,41 @@ return function(parent, settings)
     end)
 
     makeBtn("Reset All (safe defaults)", function()
+        -- Defaults
+        baseWalkSpeed = 16
+        sprintSpeed = 60
         humanoid.WalkSpeed = 16
         humanoid.JumpPower = 50
         camera.FieldOfView = 70
         workspace.Gravity = 196.2
+        -- Toggles aus
         toggles.Fly.Set(false)
         toggles.Noclip.Set(false)
         toggles.InfiniteJump.Set(false)
+        toggles.GodMode.Set(false)
+        toggles.Sprint.Set(false)
+        -- Visuals
+        for _, p in ipairs(character:GetDescendants()) do
+            if p:IsA("BasePart") then p.Transparency = 0 end
+        end
+        -- Stop fly force sicherheitshalber
         stopFly()
         enableNoclip(false)
         enableInfiniteJump(false)
+        enableGodMode(false)
     end)
 
+    -- initial canvas update
     updateCanvas()
 
+    -- Cleanup bei Tab unload (falls du Tabs austauschst)
     frame.AncestryChanged:Connect(function(_, parentNow)
         if not parentNow then
             clearConnections()
             stopFly()
             enableNoclip(false)
             enableInfiniteJump(false)
+            enableGodMode(false)
         end
     end)
 
