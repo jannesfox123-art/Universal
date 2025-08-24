@@ -569,5 +569,6 @@ return function(parent, settings)
         end
     end)
 
-    return frame
+    return frame -- GANZ WICHTIG!
 end
+
