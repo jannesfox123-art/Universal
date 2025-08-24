@@ -1,74 +1,75 @@
 return function(parent, settings)
-    local TweenService = game:GetService("TweenService")
-    local UserInputService = game:GetService("UserInputService")
-    local RunService = game:GetService("RunService")
     local player = game.Players.LocalPlayer
-    local camera = workspace.CurrentCamera
     local character = player.Character or player.CharacterAdded:Wait()
     local humanoid = character:WaitForChild("Humanoid")
 
-    player.CharacterAdded:Connect(function(char)
-        character = char
-        humanoid = char:WaitForChild("Humanoid")
-    end)
-
-    -- Tab Container
+    -- TAB FRAME
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 1, 0)
     frame.BackgroundTransparency = 1
     frame.Name = "LocalPlayerTab"
     frame.Parent = parent
 
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, -40, 1, -40)
-    container.Position = UDim2.new(0, 20, 0, 20)
-    container.BackgroundTransparency = 1
-    container.Parent = frame
+    local y = 20
+    local elements = {}
 
-    -- Toggle Button
-    local function createToggle(label, yPos, default, callback)
-        local button = Instance.new("TextButton")
-        button.Size = UDim2.new(0, 240, 0, 40)
-        button.Position = UDim2.new(0, 0, 0, yPos)
-        button.Text = label .. (default and " [ON]" or " [OFF]")
-        button.BackgroundColor3 = settings.Theme.TabButton
-        button.TextColor3 = settings.Theme.TabText
-        button.Font = settings.Font
-        button.TextSize = settings.TextSize
-        button.AutoButtonColor = false
-        button.Parent = container
+    -- UTILITY: Create Toggle Button
+    local function createToggle(text, default, callback)
+        local toggle = Instance.new("TextButton")
+        toggle.Size = UDim2.new(0, 200, 0, 40)
+        toggle.Position = UDim2.new(0, 20, 0, y)
+        toggle.BackgroundColor3 = settings.Theme.TabButton
+        toggle.Font = settings.Font
+        toggle.TextSize = settings.TextSize
+        toggle.TextColor3 = settings.Theme.TabText
+        toggle.Text = text .. ": " .. (default and "ON" or "OFF")
+        toggle.Parent = frame
 
         local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0, 8)
-        corner.Parent = button
+        corner.Parent = toggle
 
         local state = default
 
-        button.MouseButton1Click:Connect(function()
+        toggle.MouseButton1Click:Connect(function()
             state = not state
-            button.Text = label .. (state and " [ON]" or " [OFF]")
+            toggle.Text = text .. ": " .. (state and "ON" or "OFF")
+
+            -- Animation
+            TweenService:Create(toggle, TweenInfo.new(0.25), {
+                BackgroundColor3 = state and settings.Theme.TabButtonActive or settings.Theme.TabButton
+            }):Play()
+
             callback(state)
         end)
 
-        return button
+        y = y + 50
+        table.insert(elements, toggle)
+        return toggle
     end
 
-    -- Slider
-    local function createSlider(label, yPos, min, max, default, callback)
-        local textLabel = Instance.new("TextLabel")
-        textLabel.Size = UDim2.new(0, 220, 0, 20)
-        textLabel.Position = UDim2.new(0, 0, 0, yPos)
-        textLabel.Text = label..": "..tostring(default)
-        textLabel.Font = settings.Font
-        textLabel.TextSize = settings.TextSize - 2
-        textLabel.TextColor3 = settings.Theme.TabText
-        textLabel.BackgroundTransparency = 1
-        textLabel.Parent = container
+    -- UTILITY: Create Slider
+    local function createSlider(text, min, max, default, callback)
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(0, 200, 0, 40)
+        container.Position = UDim2.new(0, 20, 0, y)
+        container.BackgroundTransparency = 1
+        container.Parent = frame
 
-        local slider = Instance.new("Frame")
-        slider.Size = UDim2.new(0, 240, 0, 8)
-        slider.Position = UDim2.new(0, 0, 0, yPos + 25)
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Font = settings.Font
+        label.TextSize = settings.TextSize
+        label.TextColor3 = settings.Theme.TabText
+        label.Text = text .. ": " .. tostring(default)
+        label.Parent = container
+
+        local slider = Instance.new("TextButton")
+        slider.Size = UDim2.new(1, 0, 0, 6)
+        slider.Position = UDim2.new(0, 0, 1, -6)
         slider.BackgroundColor3 = settings.Theme.TabButton
+        slider.Text = ""
         slider.Parent = container
 
         local fill = Instance.new("Frame")
@@ -77,111 +78,126 @@ return function(parent, settings)
         fill.Parent = slider
 
         local dragging = false
-        slider.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = true
-            end
+        slider.MouseButton1Down:Connect(function()
+            dragging = true
         end)
         UserInputService.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then
                 dragging = false
             end
         end)
+
         UserInputService.InputChanged:Connect(function(input)
             if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                local pos = math.clamp((input.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1)
-                fill.Size = UDim2.new(pos, 0, 1, 0)
-                local value = math.floor(min + (max - min) * pos)
-                textLabel.Text = label..": "..tostring(value)
+                local relativeX = math.clamp((input.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1)
+                local value = math.floor(min + (max - min) * relativeX)
+                fill.Size = UDim2.new(relativeX, 0, 1, 0)
+                label.Text = text .. ": " .. tostring(value)
                 callback(value)
             end
         end)
 
-        return slider
+        y = y + 60
+        table.insert(elements, container)
+        return container
     end
 
-    -- STATES
-    local flyEnabled = false
-    local noclipEnabled = false
-    local infiniteJumpEnabled = false
-
-    -- FUNCTIONS
-    local function toggleFly(enabled)
-        flyEnabled = enabled
-        if flyEnabled then
-            local bodyVel = Instance.new("BodyVelocity")
-            bodyVel.MaxForce = Vector3.new(4000, 4000, 4000)
-            bodyVel.Velocity = Vector3.new()
-            bodyVel.Parent = character:WaitForChild("HumanoidRootPart")
-
-            RunService.RenderStepped:Connect(function()
-                if not flyEnabled then
-                    bodyVel:Destroy()
-                    return
-                end
-                bodyVel.Velocity = humanoid.MoveDirection * 50
+    -- ========== TOGGLES ==========
+    -- Fly
+    local flyConnection
+    createToggle("Fly", false, function(enabled)
+        if enabled then
+            local bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+            bodyVelocity.Parent = character:WaitForChild("HumanoidRootPart")
+            flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
+                local moveDir = player:GetMouse().KeyDown and player:GetMouse().KeyDown.W and Vector3.new(0, 1, 0) or Vector3.new()
+                bodyVelocity.Velocity = (workspace.CurrentCamera.CFrame.LookVector * 50) * (player:GetMouse().KeyDown and 1 or 0)
             end)
+        else
+            if flyConnection then
+                flyConnection:Disconnect()
+                flyConnection = nil
+            end
+            if character:FindFirstChild("HumanoidRootPart"):FindFirstChild("BodyVelocity") then
+                character.HumanoidRootPart.BodyVelocity:Destroy()
+            end
         end
-    end
+    end)
 
-    local function toggleNoclip(enabled)
-        noclipEnabled = enabled
-    end
-
-    RunService.Stepped:Connect(function()
-        if noclipEnabled and character then
-            for _, part in ipairs(character:GetDescendants()) do
+    -- Noclip
+    local noclipConnection
+    createToggle("Noclip", false, function(enabled)
+        if enabled then
+            noclipConnection = game:GetService("RunService").Stepped:Connect(function()
+                for _, part in pairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end)
+        else
+            if noclipConnection then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+            end
+            for _, part in pairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
-                    part.CanCollide = false
+                    part.CanCollide = true
                 end
             end
         end
     end)
 
+    -- Infinite Jump
+    local infiniteJumpEnabled = false
+    createToggle("Infinite Jump", false, function(state)
+        infiniteJumpEnabled = state
+    end)
     UserInputService.JumpRequest:Connect(function()
         if infiniteJumpEnabled and humanoid then
             humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
         end
     end)
 
-    -- BUTTONS & SLIDERS
-    local y = 0
-    createToggle("Fly", y, false, toggleFly) y = y + 50
-    createToggle("Noclip", y, false, toggleNoclip) y = y + 50
-    createToggle("Infinite Jump", y, false, function(state) infiniteJumpEnabled = state end) y = y + 50
-
-    createSlider("Speed", y, 16, 200, humanoid.WalkSpeed, function(val)
+    -- ========== SLIDERS ==========
+    createSlider("WalkSpeed", 16, 200, humanoid.WalkSpeed, function(val)
         humanoid.WalkSpeed = val
-    end) y = y + 60
+    end)
 
-    createSlider("Jump Power", y, 50, 300, humanoid.JumpPower, function(val)
+    createSlider("JumpPower", 50, 300, humanoid.JumpPower, function(val)
         humanoid.JumpPower = val
-    end) y = y + 60
+    end)
 
-    createSlider("Gravity", y, 10, 196.2, workspace.Gravity, function(val)
+    createSlider("Gravity", 0, 196, workspace.Gravity, function(val)
         workspace.Gravity = val
-    end) y = y + 60
+    end)
 
-    createSlider("FOV", y, 50, 120, camera.FieldOfView, function(val)
-        camera.FieldOfView = val
-    end) y = y + 60
+    createSlider("FOV", 70, 120, workspace.CurrentCamera.FieldOfView, function(val)
+        workspace.CurrentCamera.FieldOfView = val
+    end)
 
-    createToggle("Sit/Stand", y, false, function()
-        humanoid.Sit = not humanoid.Sit
-    end) y = y + 50
+    -- Sit / Stand
+    createToggle("Sit/Stand", false, function(state)
+        humanoid.Sit = state
+    end)
 
-    createToggle("Respawn", y, false, function()
-        player:LoadCharacter()
-    end) y = y + 50
-
-    createToggle("Reset All", y, false, function()
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-        workspace.Gravity = 196.2
-        camera.FieldOfView = 70
-        flyEnabled = false
-        noclipEnabled = false
-        infiniteJumpEnabled = false
+    -- Reset Character
+    local resetBtn = Instance.new("TextButton")
+    resetBtn.Size = UDim2.new(0, 200, 0, 40)
+    resetBtn.Position = UDim2.new(0, 20, 0, y)
+    resetBtn.BackgroundColor3 = settings.Theme.TabButton
+    resetBtn.Font = settings.Font
+    resetBtn.TextSize = settings.TextSize
+    resetBtn.TextColor3 = settings.Theme.TabText
+    resetBtn.Text = "Reset Character"
+    resetBtn.Parent = frame
+    local resetCorner = Instance.new("UICorner")
+    resetCorner.CornerRadius = UDim.new(0, 8)
+    resetCorner.Parent = resetBtn
+    resetBtn.MouseButton1Click:Connect(function()
+        character:BreakJoints()
     end)
 
     return frame
