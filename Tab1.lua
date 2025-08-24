@@ -144,96 +144,50 @@ return function(parent, settings)
         }
     end
 
-    local function makeSlider(name, min, max, default, callback)
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.new(1, 0, 0, 40)
-    sliderFrame.BackgroundTransparency = 1
+    local function makeSlider(title, min, max, default, onChange)
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1, -10, 0, 58)
+        container.BackgroundColor3 = THEME.TabButton
+        container.BorderSizePixel = 0
+        container.Parent = scroll
+        local cCorner = Instance.new("UICorner", container); cCorner.CornerRadius = UDim.new(0, 8)
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -10, 0, 20)
-    label.Position = UDim2.new(0, 5, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = name .. ": " .. default
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = sliderFrame
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -16, 0, 24)
+        lbl.Position = UDim2.new(0, 8, 0, 6)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = string.format("%s: %s", title, tostring(default))
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Font = FONT
+        lbl.TextSize = TEXT_SIZE
+        lbl.TextColor3 = THEME.TabText
+        lbl.Parent = container
 
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(1, -20, 0, 6)
-    bar.Position = UDim2.new(0, 10, 0, 25)
-    bar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    bar.BorderSizePixel = 0
-    bar.Parent = sliderFrame
+        local bar = Instance.new("Frame")
+        bar.Size = UDim2.new(1, -16, 0, 10)
+        bar.Position = UDim2.new(0, 8, 0, 36)
+        bar.BackgroundColor3 = THEME.TabButtonHover
+        bar.BorderSizePixel = 0
+        bar.Parent = container
+        local bCorner = Instance.new("UICorner", bar); bCorner.CornerRadius = UDim.new(0, 6)
 
-    local bCorner = Instance.new("UICorner", bar)
-    bCorner.CornerRadius = UDim.new(0, 6)
+        local fill = Instance.new("Frame")
+        fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+        fill.BackgroundColor3 = THEME.TabButtonActive
+        fill.BorderSizePixel = 0
+        fill.Parent = bar
+        local fCorner = Instance.new("UICorner", fill); fCorner.CornerRadius = UDim.new(0, 6)
 
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
-    fill.BorderSizePixel = 0
-    fill.Parent = bar
+        local knob = Instance.new("Frame")
+        knob.Size = UDim2.new(0, 16, 0, 16)
+        knob.Position = UDim2.new((default - min) / (max - min), -8, 0.5, -8)
+        knob.BackgroundColor3 = Color3.fromRGB(240,240,240)
+        knob.BorderSizePixel = 0
+        knob.Parent = bar
+        local kCorner = Instance.new("UICorner", knob); kCorner.CornerRadius = UDim.new(1, 0)
 
-    local fCorner = Instance.new("UICorner", fill)
-    fCorner.CornerRadius = UDim.new(0, 6)
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 16, 0, 16)
-    knob.Position = UDim2.new((default - min) / (max - min), -8, 0.5, -8)
-    knob.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-    knob.BorderSizePixel = 0
-    knob.Parent = bar
-
-    local kCorner = Instance.new("UICorner", knob)
-    kCorner.CornerRadius = UDim.new(1, 0)
-
-    local value = default
-    local dragging = false
-
-    local function getAlphaFromMouse(x)
-        local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-        return rel
-    end
-
-    local function setValueFromAlpha(alpha)
-        value = min + (max - min) * alpha
-        label.Text = name .. ": " .. math.floor(value + 0.5)
-        fill.Size = UDim2.new(alpha, 0, 1, 0)
-        knob.Position = UDim2.new(alpha, -8, 0.5, -8)
-        if callback then
-            callback(value)
-        end
-    end
-
-    bar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            setValueFromAlpha(getAlphaFromMouse(input.Position.X))
-        end
-    end)
-
-    knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            setValueFromAlpha(getAlphaFromMouse(input.Position.X))
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            setValueFromAlpha(getAlphaFromMouse(input.Position.X))
-        end
-    end)
-
-    return sliderFrame
-end
-
+        local value = default
+        local dragging = false
 
         local function setValueFromAlpha(alpha)
             alpha = math.clamp(alpha, 0, 1)
