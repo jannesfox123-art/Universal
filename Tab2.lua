@@ -1,5 +1,5 @@
 return function(parent, settings)
-    -- // Services
+    --// Services
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
     local UIS = game:GetService("UserInputService")
@@ -9,7 +9,7 @@ return function(parent, settings)
     local Camera = workspace.CurrentCamera
     local UserGameSettings = UserSettings():GetService("UserGameSettings")
 
-    -- // Connection manager (Cleanup)
+    --// Connection & Hook Manager
     local connections = {}
     local function bind(signal, fn)
         local c = signal:Connect(fn)
@@ -17,16 +17,26 @@ return function(parent, settings)
         return c
     end
     local function cleanup()
-        for _, c in ipairs(connections) do
-            pcall(function() c:Disconnect() end)
+        for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+        -- Restore hooks
+        if hooked then
+            pcall(function()
+                setreadonly(mt, false)
+                if oldNamecall then mt.__namecall = oldNamecall end
+                if oldIndex then mt.__index = oldIndex end
+                setreadonly(mt, true)
+            end)
+            hooked = false
         end
+        pcall(function() if fovCircle then fovCircle.Visible = false fovCircle:Remove() end end)
+        for plr, _ in pairs(HitboxOriginal) do pcall(function() revertHitbox(plr) end) end
     end
 
-    -- // Root UI
+    --// UI Root
     local root = Instance.new("ScrollingFrame")
     root.Name = "CombatTab"
     root.Size = UDim2.new(1, 0, 1, 0)
-    root.CanvasSize = UDim2.new(0, 0, 0, 1250)
+    root.CanvasSize = UDim2.new(0, 0, 0, 1300)
     root.ScrollBarThickness = 6
     root.BackgroundTransparency = 1
     root.Parent = parent
@@ -74,6 +84,7 @@ return function(parent, settings)
     local function makeToggle(label, default, callback)
         local btn = makeButtonBase(label .. ": " .. (default and "ON" or "OFF"))
         local state = default
+        if state then btn.BackgroundColor3 = settings.Theme.TabButtonActive or settings.Theme.TabButton end
         bind(btn.MouseButton1Click, function()
             state = not state
             btn.Text = label .. ": " .. (state and "ON" or "OFF")
@@ -82,7 +93,6 @@ return function(parent, settings)
             }):Play()
             callback(state)
         end)
-        if state then btn.BackgroundColor3 = settings.Theme.TabButtonActive or settings.Theme.TabButton end
         return function(newState)
             state = newState
             btn.Text = label .. ": " .. (state and "ON" or "OFF")
@@ -128,14 +138,13 @@ return function(parent, settings)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
         end)
 
-        local val = defaultV
         local function apply(v)
-            val = math.clamp(v, minV, maxV)
-            local ratio = (val - minV)/(maxV-minV)
+            v = math.clamp(v, minV, maxV)
+            local ratio = (v - minV)/(maxV-minV)
             fill.Size = UDim2.new(ratio, 0, 1, 0)
-            local show = (math.floor(val/step+0.5)*step)
+            local show = (math.floor(v/step+0.5)*step)
             txt.Text = ("%s: %s"):format(label, tostring(show))
-            callback(val)
+            callback(v)
         end
 
         bind(RunService.RenderStepped, function()
@@ -173,13 +182,16 @@ return function(parent, settings)
     -- Combat States
     ----------------------------------------------------------------
     local AimbotEnabled = false
-    local AimbotMode = "CFrame"            -- "CFrame" | "Mouse"
+    local SilentAimEnabled = false
+    local SilentHitTarget = "Head"   -- "Head" | "Random"
+
+    local AimbotMode = "CFrame"      -- "CFrame" | "Mouse"
     local AimbotKey = Enum.UserInputType.MouseButton2
     local AimingHeld = false
 
     local AimbotFOV = 120
-    local AimbotSmooth = 50                -- 0..100 ; 0 = instant lock, 100 = sehr langsam
-    local AimbotPrediction = 0.15          -- Sekunden * Velocity
+    local AimbotSmooth = 50          -- 0..100 ; 0 = instant lock, 100 = langsam
+    local AimbotPrediction = 0.15    -- seconds * velocity
 
     local TriggerbotEnabled = false
     local TriggerDelayMS = 100
@@ -189,7 +201,7 @@ return function(parent, settings)
 
     local HitboxEnabled = false
     local HitboxSize = 5
-    local HitboxOriginal = {}              -- plr -> Vector3 size
+    local HitboxOriginal = {}
 
     local ReachEnabled = false
     local ReachDistance = 18
@@ -197,7 +209,7 @@ return function(parent, settings)
     local AntiKBEnabled = false
 
     ----------------------------------------------------------------
-    -- Helpers
+    -- Helpers & Targeting
     ----------------------------------------------------------------
     local function isAlive(plr)
         local char = plr.Character
@@ -205,72 +217,72 @@ return function(parent, settings)
         local hum = char:FindFirstChildOfClass("Humanoid")
         return hum and hum.Health > 0
     end
-
     local function screen2D(v3)
         local v2, on = Camera:WorldToViewportPoint(v3)
         return Vector2.new(v2.X, v2.Y), on
     end
-
-    local function getClosestHeadInFOV()
+    local function getClosestInFOV()
         local mousePos = UIS:GetMouseLocation()
-        local best, bestMag, bestHead = nil, math.huge, nil
+        local best, bestMag, bestPart = nil, math.huge, nil
         for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and isAlive(plr) and plr.Character and plr.Character:FindFirstChild("Head") then
-                local head = plr.Character.Head
-                local pos2D, on = screen2D(head.Position)
-                if on then
-                    local mag = (pos2D - mousePos).Magnitude
-                    if mag < bestMag and mag <= AimbotFOV then
-                        best, bestMag, bestHead = plr, mag, head
+            if plr ~= LocalPlayer and isAlive(plr) and plr.Character then
+                local head = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
+                if head then
+                    local pos2D, on = screen2D(head.Position)
+                    if on then
+                        local mag = (pos2D - mousePos).Magnitude
+                        if mag < bestMag and mag <= AimbotFOV then
+                            best, bestMag, bestPart = plr, mag, head
+                        end
                     end
                 end
             end
         end
-        return best, bestHead
+        return best, bestPart
+    end
+    local function pickSilentPart(char)
+        if SilentHitTarget == "Head" then
+            return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+        end
+        local candidates = {}
+        for _, n in ipairs({"Head","UpperTorso","LowerTorso","HumanoidRootPart","Torso"}) do
+            if char:FindFirstChild(n) then table.insert(candidates, char[n]) end
+        end
+        if #candidates == 0 then return char:FindFirstChild("HumanoidRootPart") end
+        return candidates[math.random(1, #candidates)]
     end
 
-    -- CFrame Smooth (0 => instant, 100 => sehr langsam)
-    local function cframeAim(targetPos, dt)
+    -- Aimbot implementations
+    local function cframeAim(targetPos)
         local current = Camera.CFrame
         local target = CFrame.new(current.Position, targetPos)
         if AimbotSmooth <= 0 then
-            Camera.CFrame = target -- perfektes/sofortiges Lock
-            return
+            Camera.CFrame = target -- instant lock
+        else
+            local alpha = math.clamp((100 - AimbotSmooth)/100, 0.01, 1)
+            Camera.CFrame = current:Lerp(target, alpha)
         end
-        local alpha = math.clamp((100 - AimbotSmooth)/100, 0.01, 1) -- 100 -> 0.01 (sehr langsam), 50 -> 0.5, 0 -> 1
-        Camera.CFrame = current:Lerp(target, alpha)
     end
-
-    -- Mouse Move Aim (nutzt mousemoverel, Fallback = CFrame)
     local hasMouseMoveRel = (typeof(mousemoverel) == "function")
-    local function mouseAim(targetPos, dt)
+    local function mouseAim(targetPos)
         local mpos = UIS:GetMouseLocation()
         local v2, on = screen2D(targetPos)
         if not on then return end
         local dx = v2.X - mpos.X
         local dy = v2.Y - mpos.Y
         if AimbotSmooth <= 0 then
-            -- Sofortiges Lock: mit Maus → eine große Bewegung auf einmal (so nah wie möglich)
-            if hasMouseMoveRel then
-                mousemoverel(dx, dy)
-            else
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
-            end
+            if hasMouseMoveRel then mousemoverel(dx, dy) else Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos) end
             return
         end
         local sens = UserGameSettings.MouseSensitivity
-        local factor = math.clamp((100 - AimbotSmooth)/100, 0.01, 1) -- 100 -> sehr klein (langsam), 0 -> groß (instant)
+        local factor = math.clamp((100 - AimbotSmooth)/100, 0.01, 1)
         local moveX = dx * factor * math.max(sens, 0.1) * 0.9
         local moveY = dy * factor * math.max(sens, 0.1) * 0.9
-        if hasMouseMoveRel then
-            mousemoverel(moveX, moveY)
-        else
-            cframeAim(targetPos, dt)
-        end
+        if hasMouseMoveRel then mousemoverel(moveX, moveY) else cframeAim(targetPos) end
     end
 
     ----------------------------------------------------------------
-    -- FOV Circle (Drawing API, optional)
+    -- FOV Circle (optional Drawing API)
     ----------------------------------------------------------------
     local fovCircle
     pcall(function()
@@ -282,51 +294,119 @@ return function(parent, settings)
         fovCircle.Filled = false
         fovCircle.Color = settings.Theme.Highlight or Color3.fromRGB(255,255,255)
     end)
-
     bind(RunService.RenderStepped, function()
         if fovCircle then
-            if AimbotEnabled then
-                fovCircle.Visible = true
+            local show = (AimbotEnabled or SilentAimEnabled)
+            fovCircle.Visible = show
+            if show then
                 fovCircle.Radius = AimbotFOV
                 fovCircle.Position = UIS:GetMouseLocation()
-            else
-                fovCircle.Visible = false
             end
         end
     end)
 
     ----------------------------------------------------------------
-    -- Input: Aimbot Key
+    -- Input: Key Hold
     ----------------------------------------------------------------
     bind(UIS.InputBegan, function(input, gp)
         if gp then return end
-        if input.UserInputType == AimbotKey then
-            AimingHeld = true
-        end
+        if input.UserInputType == AimbotKey then AimingHeld = true end
     end)
     bind(UIS.InputEnded, function(input)
-        if input.UserInputType == AimbotKey then
-            AimingHeld = false
-        end
+        if input.UserInputType == AimbotKey then AimingHeld = false end
     end)
 
     ----------------------------------------------------------------
-    -- CORE LOOPS
+    -- Silent Aim Hooks (Mouse.Hit + generic Raycast redirect)
     ----------------------------------------------------------------
-    -- Aimbot Loop
-    bind(RunService.RenderStepped, function(dt)
+    local mt = getrawmetatable(game)
+    local oldNamecall, oldIndex, hooked = nil, nil, false
+
+    local function safeHook()
+        if hooked then return true end
+        local ok = pcall(function() return setreadonly and getrawmetatable and mt and mt.__namecall end)
+        if not ok then return false end
+        setreadonly(mt, false)
+        oldNamecall = mt.__namecall
+        oldIndex = mt.__index
+
+        -- Mouse.Hit spoof
+        mt.__index = function(t, k)
+            if SilentAimEnabled and AimingHeld and k == "Hit" then
+                local plr, _ = getClosestInFOV()
+                if plr and plr.Character then
+                    local part = pickSilentPart(plr.Character)
+                    if part then
+                        local predict = part.Position + (part.Velocity * AimbotPrediction)
+                        return CFrame.new(predict)
+                    end
+                end
+            end
+            return oldIndex(t, k)
+        end
+
+        -- Redirect workspace:Raycast / FindPartOnRay*
+        mt.__namecall = function(self, ...)
+            local method = getnamecallmethod and getnamecallmethod() or ""
+            if SilentAimEnabled and AimingHeld then
+                if typeof(self) == "Instance" and (self == workspace or self:IsDescendantOf(workspace)) then
+                    if method == "Raycast" then
+                        local args = {...}
+                        -- args: origin (Vector3), direction (Vector3), params
+                        local plr, _ = getClosestInFOV()
+                        if plr and plr.Character then
+                            local part = pickSilentPart(plr.Character)
+                            if part then
+                                local origin = args[1]
+                                local target = part.Position + (part.Velocity * AimbotPrediction)
+                                args[2] = (target - origin).Unit * (args[2].Magnitude) -- gleiche Länge, aber Richtung auf Ziel
+                                return oldNamecall(self, unpack(args))
+                            end
+                        end
+                    elseif method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" then
+                        local args = {...}
+                        -- args[1] is Ray
+                        local R = args[1]
+                        if typeof(R) == "Ray" then
+                            local plr, _ = getClosestInFOV()
+                            if plr and plr.Character then
+                                local part = pickSilentPart(plr.Character)
+                                if part then
+                                    local origin = R.Origin
+                                    local target = part.Position + (part.Velocity * AimbotPrediction)
+                                    args[1] = Ray.new(origin, (target - origin).Unit * R.Direction.Magnitude)
+                                    return oldNamecall(self, unpack(args))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            return oldNamecall(self, ...)
+        end
+
+        setreadonly(mt, true)
+        hooked = true
+        return true
+    end
+
+    ----------------------------------------------------------------
+    -- CORE Loops
+    ----------------------------------------------------------------
+    -- Aimbot
+    bind(RunService.RenderStepped, function()
         if not (AimbotEnabled and AimingHeld) then return end
-        local plr, head = getClosestHeadInFOV()
+        local plr, head = getClosestInFOV()
         if not head then return end
         local targetPos = head.Position + (head.Velocity * AimbotPrediction)
         if AimbotMode == "CFrame" then
-            cframeAim(targetPos, dt)
+            cframeAim(targetPos)
         else
-            mouseAim(targetPos, dt)
+            mouseAim(targetPos)
         end
     end)
 
-    -- Triggerbot Loop (feuert nur, wenn Key gehalten & Ziel unter Fadenkreuz)
+    -- Triggerbot
     local lastTrigger = 0
     bind(RunService.RenderStepped, function()
         if not (TriggerbotEnabled and AimingHeld) then return end
@@ -345,7 +425,7 @@ return function(parent, settings)
         end
     end)
 
-    -- Auto Clicker (CPS, unabhängig von LMB)
+    -- Auto Clicker
     local clickAcc = 0
     bind(RunService.RenderStepped, function(dt)
         if not AutoClickEnabled then return end
@@ -381,16 +461,13 @@ return function(parent, settings)
     local function applyHitbox(plr)
         if not (plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")) then return end
         local hrp = plr.Character.HumanoidRootPart
-        if not HitboxOriginal[plr] then
-            HitboxOriginal[plr] = hrp.Size
-        end
+        if not HitboxOriginal[plr] then HitboxOriginal[plr] = hrp.Size end
         pcall(function()
             hrp.CanCollide = false
             hrp.Size = Vector3.new(HitboxSize, HitboxSize, HitboxSize)
-            -- keine Transparenz-Änderung hier (sauber)
         end)
     end
-    local function revertHitbox(plr)
+    function revertHitbox(plr)
         if not (plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")) then return end
         local hrp = plr.Character.HumanoidRootPart
         local orig = HitboxOriginal[plr] or Vector3.new(2,2,1)
@@ -416,7 +493,7 @@ return function(parent, settings)
         end
     end)
 
-    -- Reach (Tool Handle vergrößern)
+    -- Reach (Tool handle scale)
     local function applyReach()
         if not ReachEnabled then return end
         local char = LocalPlayer.Character
@@ -438,25 +515,37 @@ return function(parent, settings)
     ----------------------------------------------------------------
     -- UI Controls
     ----------------------------------------------------------------
-    addSection("Aimbot")
-    makeToggle("Aimbot", false, function(b) AimbotEnabled = b end)
+    addSection("Aimbot & Silent Aim")
+
+    local setAimbot = makeToggle("Aimbot", false, function(b)
+        AimbotEnabled = b
+        if b then
+            SilentAimEnabled = false
+        end
+    end)
+    local setSilent = makeToggle("Silent Aim", false, function(b)
+        SilentAimEnabled = b
+        if b then
+            AimbotEnabled = false
+            -- try hook
+            if not safeHook() then
+                warn("[Combat] Silent Aim Hook nicht verfügbar (Executor unterstützt es evtl. nicht).")
+            end
+        end
+    end)
+
+    makeChooser("Silent Target", {"Head","Random"}, 1, function(opt) SilentHitTarget = opt end)
 
     makeChooser("Aimbot Mode", {"CFrame","Mouse"}, 1, function(opt) AimbotMode = opt end)
 
-    makeChooser("Aimbot Key", {"Right Mouse","Left Mouse"}, 1, function(opt, idx)
+    makeChooser("Aimbot Key", {"Right Mouse","Left Mouse"}, 1, function(_, idx)
         AimingHeld = false
         AimbotKey = (idx == 1) and Enum.UserInputType.MouseButton2 or Enum.UserInputType.MouseButton1
     end)
 
     makeSlider("FOV", 30, 300, AimbotFOV, 1, function(v) AimbotFOV = v end)
-
-    -- Smooth 0..100 — 0 = instant, 100 = very slow
     makeSlider("Smooth", 0, 100, AimbotSmooth, 1, function(v) AimbotSmooth = v end)
-
-    -- Prediction in ms (0..300) -> seconds
-    makeSlider("Prediction (ms)", 0, 300, math.floor(AimbotPrediction*1000), 5, function(v)
-        AimbotPrediction = v/1000
-    end)
+    makeSlider("Prediction (ms)", 0, 300, math.floor(AimbotPrediction*1000), 5, function(v) AimbotPrediction = v/1000 end)
 
     addSection("Triggerbot")
     makeToggle("Triggerbot", false, function(b) TriggerbotEnabled = b end)
@@ -486,8 +575,6 @@ return function(parent, settings)
     bind(root.AncestryChanged, function(_, parentNow)
         if parentNow == nil then
             cleanup()
-            pcall(function() if fovCircle then fovCircle.Visible = false; fovCircle:Remove() end end)
-            for plr, _ in pairs(HitboxOriginal) do pcall(function() revertHitbox(plr) end) end
         end
     end)
 
