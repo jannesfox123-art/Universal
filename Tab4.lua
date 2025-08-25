@@ -1,103 +1,127 @@
-return function(container, settings)
-    -- Scrollbarer Bereich
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, 0, 1, 0)
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 1000)
-    scroll.ScrollBarThickness = 6
-    scroll.BackgroundTransparency = 1
-    scroll.Parent = container
+return function(parent, settings)
+    -- Container für Visuals Tab
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundTransparency = 1
+    frame.Visible = false
+    frame.Parent = parent
+
+    -- Scrollbar
+    local scrollingFrame = Instance.new("ScrollingFrame")
+    scrollingFrame.Size = UDim2.new(1, 0, 1, 0)
+    scrollingFrame.CanvasSize = UDim2.new(0, 0, 2, 0)
+    scrollingFrame.BackgroundTransparency = 1
+    scrollingFrame.ScrollBarThickness = 6
+    scrollingFrame.Parent = frame
 
     local layout = Instance.new("UIListLayout")
     layout.Padding = UDim.new(0, 10)
-    layout.FillDirection = Enum.FillDirection.Vertical
-    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    layout.Parent = scroll
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = scrollingFrame
 
-    -- Hilfsfunktion: Toggle-Button erstellen
-    local function createToggle(name, state, callback)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 300, 0, 40)
-        btn.Text = name .. ": " .. (state and "ON" or "OFF")
-        btn.Font = settings.Font
-        btn.TextSize = settings.TextSize
-        btn.BackgroundColor3 = settings.Theme.TabButton
-        btn.TextColor3 = settings.Theme.TabText
-        btn.AutoButtonColor = false
-        btn.Parent = scroll
+    -- Helper für Toggle Switch
+    local function createToggle(name, default, callback)
+        local toggle = Instance.new("TextButton")
+        toggle.Size = UDim2.new(0, 250, 0, 40)
+        toggle.BackgroundColor3 = settings.Theme.TabButton
+        toggle.TextColor3 = settings.Theme.TabText
+        toggle.Text = name .. ": OFF"
+        toggle.Font = settings.Font
+        toggle.TextSize = settings.TextSize
+        toggle.AutoButtonColor = false
+        toggle.LayoutOrder = 1
 
         local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0, 8)
-        corner.Parent = btn
+        corner.Parent = toggle
 
-        btn.MouseEnter:Connect(function()
-            btn.BackgroundColor3 = settings.Theme.TabButtonHover
+        local enabled = default
+        toggle.Text = name .. (enabled and ": ON" or ": OFF")
+
+        toggle.MouseButton1Click:Connect(function()
+            enabled = not enabled
+            toggle.Text = name .. (enabled and ": ON" or ": OFF")
+            TweenService:Create(toggle, TweenInfo.new(0.2), {
+                BackgroundColor3 = enabled and settings.Theme.TabButtonActive or settings.Theme.TabButton
+            }):Play()
+            if callback then callback(enabled) end
         end)
-        btn.MouseLeave:Connect(function()
-            btn.BackgroundColor3 = settings.Theme.TabButton
-        end)
-        btn.MouseButton1Click:Connect(function()
-            state = not state
-            btn.Text = name .. ": " .. (state and "ON" or "OFF")
-            callback(state)
-        end)
+
+        return toggle
     end
 
-    -- ESP Variables
+    -- Funktionen: ESP, Tracers, Box, Chams, Crosshair, FOV
     local espEnabled = false
-    local boxESPEnabled = false
-    local nameESPEnabled = false
+    local tracersEnabled = false
+    local boxEnabled = false
+    local chamsEnabled = false
+    local crosshairEnabled = false
+    local fovCircleEnabled = false
+    local fovCircle = nil
 
-    -- ESP Functions
     local function toggleESP(state)
         espEnabled = state
-        -- Dein ESP-Code hier aktivieren/deaktivieren
-        print("ESP:", state)
+        -- Hier käme dein ESP Script oder Integration
     end
 
-    local function toggleBoxESP(state)
-        boxESPEnabled = state
-        -- Boxen um Spieler zeichnen
-        print("Box ESP:", state)
+    local function toggleTracers(state)
+        tracersEnabled = state
+        -- Tracer Lines
     end
 
-    local function toggleNameESP(state)
-        nameESPEnabled = state
-        -- Namensanzeige aktivieren
-        print("Name ESP:", state)
+    local function toggleBox(state)
+        boxEnabled = state
+        -- Box Drawing
     end
 
-    -- Features
-    createToggle("ESP", espEnabled, toggleESP)
-    createToggle("Box ESP", boxESPEnabled, toggleBoxESP)
-    createToggle("Name ESP", nameESPEnabled, toggleNameESP)
+    local function toggleChams(state)
+        chamsEnabled = state
+        -- Chams Material
+    end
 
-    createToggle("Fullbright", false, function(state)
+    local function toggleCrosshair(state)
+        crosshairEnabled = state
         if state then
-            game.Lighting.Brightness = 2
-            game.Lighting.Ambient = Color3.new(1, 1, 1)
+            if not fovCircle then
+                fovCircle = Drawing.new("Circle")
+                fovCircle.Thickness = 2
+                fovCircle.NumSides = 64
+                fovCircle.Radius = 50
+                fovCircle.Color = Color3.fromRGB(0, 255, 0)
+                fovCircle.Filled = false
+                fovCircle.Visible = true
+            end
         else
-            game.Lighting.Brightness = 1
-            game.Lighting.Ambient = Color3.new(0.5, 0.5, 0.5)
+            if fovCircle then
+                fovCircle:Remove()
+                fovCircle = nil
+            end
         end
-    end)
+    end
 
-    createToggle("Night Vision", false, function(state)
-        if state then
-            game.Lighting.Brightness = 0.3
-            game.Lighting.Ambient = Color3.new(0, 1, 0)
-        else
-            game.Lighting.Brightness = 1
-            game.Lighting.Ambient = Color3.new(0.5, 0.5, 0.5)
-        end
-    end)
+    local function toggleFOVCircle(state)
+        fovCircleEnabled = state
+        -- Ähnliche Logik wie beim Crosshair
+    end
 
-    createToggle("Tracers", false, function(state)
-        -- Linie vom Bildschirm zum Spieler
-        print("Tracers:", state)
-    end)
+    -- Toggles hinzufügen
+    local t1 = createToggle("ESP", false, toggleESP)
+    t1.Parent = scrollingFrame
 
-    createToggle("Chams", false, function(state)
-        -- Spieler durch Wände sichtbar machen (requires Highlight API)
-        print("Chams:", state)
-    end)
+    local t2 = createToggle("Tracers", false, toggleTracers)
+    t2.Parent = scrollingFrame
+
+    local t3 = createToggle("Box", false, toggleBox)
+    t3.Parent = scrollingFrame
+
+    local t4 = createToggle("Chams", false, toggleChams)
+    t4.Parent = scrollingFrame
+
+    local t5 = createToggle("Crosshair", false, toggleCrosshair)
+    t5.Parent = scrollingFrame
+
+    local t6 = createToggle("FOV Circle", false, toggleFOVCircle)
+    t6.Parent = scrollingFrame
+
+    return frame
 end
