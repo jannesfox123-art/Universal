@@ -418,19 +418,82 @@ return function(parent, settings)
     -------------------------------------------------------------
     makeSection("ESP / Overlays")
 
-    local _, setNameESP   = makeToggle("Name ESP", false, function(v) State.NameESP = v; refreshAllPlayers() end)
-    local _, setBoxESP    = makeToggle("Box ESP",  false, function(v) State.BoxESP = v; refreshAllPlayers() end)
-    local _, setHealthESP = makeToggle("Health ESP", false, function(v) State.HealthESP = v; refreshAllPlayers() end)
-    local _, setDistESP   = makeToggle("Distance ESP", false, function(v) State.DistanceESP = v; refreshAllPlayers() end)
-    local _, setChams     = makeToggle("Chams", false, function(v) State.Chams = v; refreshAllPlayers() end)
-    local _, setTracers   = makeToggle("Tracers", false, function(v)
-        State.Tracers = v
-        if not v and tracerUpdateConn then tracerUpdateConn:Disconnect(); tracerUpdateConn = nil end
-        if not v and cameraProxy then cameraProxy:Destroy(); cameraProxy = nil end
+    local _, setNameESP   = makeToggle("Name ESP", false, function(v) 
+        State.NameESP = v
         refreshAllPlayers()
     end)
-    local _, setTeamCheck = makeToggle("Team Check", false, function(v) State.TeamCheck = v; refreshAllPlayers() end)
 
+    local _, setBoxESP    = makeToggle("Box ESP", false, function(v) 
+        State.BoxESP = v
+        refreshAllPlayers()
+    end)
+
+    local _, setHealthESP = makeToggle("Health ESP", false, function(v) 
+        State.HealthESP = v
+        refreshAllPlayers()
+    end)
+
+    local _, setDistESP   = makeToggle("Distance ESP", false, function(v) 
+        State.DistanceESP = v
+        refreshAllPlayers()
+    end)
+
+    local _, setChams     = makeToggle("Chams", false, function(v) 
+        State.Chams = v
+        refreshAllPlayers()
+    end)
+
+    local _, setTracers   = makeToggle("Tracers", false, function(v)
+        State.Tracers = v
+        if not v and tracerUpdateConn then 
+            tracerUpdateConn:Disconnect()
+            tracerUpdateConn = nil 
+        end
+        if not v and cameraProxy then 
+            cameraProxy:Destroy()
+            cameraProxy = nil 
+        end
+        refreshAllPlayers()
+    end)
+
+    local _, setTeamCheck = makeToggle("Team Check", false, function(v) 
+        State.TeamCheck = v
+        refreshAllPlayers()
+    end)
+
+    -------------------------------------------------------------
+    -- Lighting / HUD
+    -------------------------------------------------------------
     makeSection("Lighting / HUD")
 
-    makeToggle("Fullbright", false, function
+    makeToggle("Fullbright", false, function(v)
+        State.Fullbright = v
+        if v then
+            game.Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+            game.Lighting.Brightness = 2
+        else
+            game.Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+            game.Lighting.Brightness = 1
+        end
+    end)
+
+    makeToggle("No Fog", false, function(v)
+        State.NoFog = v
+        game.Lighting.FogEnd = v and 1e6 or 1000
+    end)
+
+    makeToggle("Crosshair", false, function(v)
+        State.Crosshair = v
+        if v then
+            enableCrosshair()
+        else
+            disableCrosshair()
+        end
+    end)
+
+    -------------------------------------------------------------
+    -- Return Frame
+    -------------------------------------------------------------
+    return frame
+end
+
