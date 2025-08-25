@@ -1,15 +1,15 @@
--- Tab4.lua — Visuals (professionell, robust, identisch zu Tab1-Style)
--- Rückgabe: Frame (Container), vollständig kompatibel mit deinem Main-Script
+-- Tab4.lua — Visuals
+-- Wird in dein Main Script integriert: return function(parent, settings) ... end
 
 return function(parent, settings)
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
-    local TweenService = game:GetService("TweenService")
     local Lighting = game:GetService("Lighting")
     local LocalPlayer = Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
 
     ----------------------------------------------------------------
-    -- UI: Tab-Container + Scrollbereich (gleiches Layout wie Tab1)
+    -- UI Container
     ----------------------------------------------------------------
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 1, 0)
@@ -19,35 +19,30 @@ return function(parent, settings)
 
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1, 0, 1, 0)
-    scroll.CanvasSize = UDim2.fromScale(0, 0)
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     scroll.ScrollBarThickness = 6
     scroll.BackgroundTransparency = 1
     scroll.Parent = frame
 
-    local list = Instance.new("UIListLayout")
-    list.Padding = UDim.new(0, 10)
-    list.FillDirection = Enum.FillDirection.Vertical
-    list.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    list.SortOrder = Enum.SortOrder.LayoutOrder
-    list.Parent = scroll
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 10)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = scroll
 
-    local function autoCanvas()
-        task.defer(function()
-            local contentHeight = list.AbsoluteContentSize.Y
-            scroll.CanvasSize = UDim2.new(0, 0, 0, math.max(contentHeight + 20, scroll.AbsoluteSize.Y))
-        end)
-    end
-    list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(autoCanvas)
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
+    end)
 
-    -------------------------------------------------------------
-    -- UI: Button/Toggles (identisch zu Tab1, mit Hover-Tweens)
-    -------------------------------------------------------------
-    local function makeToggle(labelText, default, onToggle)
+    ----------------------------------------------------------------
+    -- UI Elements: Toggle
+    ----------------------------------------------------------------
+    local function makeToggle(text, default, callback)
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 260, 0, 42)
+        btn.Size = UDim2.new(0, 300, 0, 42) -- Breiter wie in Tab1
         btn.BackgroundColor3 = settings.Theme.TabButton
         btn.TextColor3 = settings.Theme.TabText
-        btn.Text = string.format("%s: %s", labelText, default and "ON" or "OFF")
+        btn.Text = text .. ": " .. (default and "ON" or "OFF")
         btn.Font = settings.Font
         btn.TextSize = settings.TextSize
         btn.AutoButtonColor = false
@@ -58,127 +53,132 @@ return function(parent, settings)
         corner.Parent = btn
 
         local enabled = default
-
         local function updateColor()
             btn.BackgroundColor3 = enabled and settings.Theme.TabButtonActive or settings.Theme.TabButton
         end
 
         btn.MouseEnter:Connect(function()
-            TweenService:Create(btn, TweenInfo.new(0.15), {
-                BackgroundColor3 = enabled and settings.Theme.TabButtonActive or settings.Theme.TabButtonHover
-            }):Play()
+            btn.BackgroundColor3 = settings.Theme.TabButtonHover
         end)
-
-        btn.MouseLeave:Connect(function()
-            updateColor()
-        end)
-
+        btn.MouseLeave:Connect(updateColor)
         btn.MouseButton1Click:Connect(function()
             enabled = not enabled
-            btn.Text = string.format("%s: %s", labelText, enabled and "ON" or "OFF")
+            btn.Text = text .. ": " .. (enabled and "ON" or "OFF")
             updateColor()
-            if onToggle then
-                task.spawn(function() onToggle(enabled) end)
-            end
+            if callback then callback(enabled) end
         end)
 
-        return btn, function(state)
-            enabled = state
-            btn.Text = string.format("%s: %s", labelText, enabled and "ON" or "OFF")
-            updateColor()
-        end
+        return btn
     end
 
     local function makeSection(title)
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0, 260, 0, 24)
+        lbl.Size = UDim2.new(0, 300, 0, 24)
         lbl.BackgroundTransparency = 1
         lbl.Text = title
-        lbl.TextColor3 = Color3.fromRGB(200,200,200)
+        lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
         lbl.Font = settings.Font
         lbl.TextSize = settings.TextSize
         lbl.Parent = scroll
-        return lbl
     end
 
-    -------------------------------------------------------------
-    -- VISUALS IMPLEMENTATION
-    -------------------------------------------------------------
-    local connections = {}
-    local tracerUpdateConn : RBXScriptConnection? = nil
-    local cameraProxy: Part? = nil
-
-    local State = {
-        TeamCheck = false,
-        NameESP = false,
-        BoxESP = false,
-        HealthESP = false,
-        DistanceESP = false,
-        Tracers = false,
-        Chams = false,
-        Fullbright = false,
-        Crosshair = false,
-        NoFog = false
+    ----------------------------------------------------------------
+    -- Visuals Logic
+    ----------------------------------------------------------------
+    local ESPEnabled = {
+        Name = false, Box = false, Health = false, Distance = false,
+        Tracers = false, Chams = false, TeamCheck = false,
+        Fullbright = false, NoFog = false, Crosshair = false
     }
 
-    local PerPlayer = {}
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = "VisualsESP"
+    espFolder.Parent = CoreGui or game:GetService("CoreGui")
 
-    local crosshairGui : ScreenGui? = nil
-    local function setCrosshair(enabled)
-        if enabled then
-            if not crosshairGui then
-                crosshairGui = Instance.new("ScreenGui")
-                crosshairGui.Name = "VIS_Crosshair"
-                crosshairGui.ResetOnSpawn = false
-                crosshairGui.IgnoreGuiInset = true
-                crosshairGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    local crosshairGui
+    local function setCrosshair(state)
+        if state and not crosshairGui then
+            crosshairGui = Instance.new("ScreenGui")
+            crosshairGui.Name = "Crosshair"
+            crosshairGui.IgnoreGuiInset = true
+            crosshairGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-                local dot = Instance.new("Frame")
-                dot.Size = UDim2.new(0, 4, 0, 4)
-                dot.Position = UDim2.new(0.5, -2, 0.5, -2)
-                dot.BackgroundColor3 = Color3.fromRGB(0,255,120)
-                dot.BorderSizePixel = 0
-                dot.Parent = crosshairGui
-            end
-        elseif crosshairGui then
+            local dot = Instance.new("Frame")
+            dot.Size = UDim2.new(0, 4, 0, 4)
+            dot.Position = UDim2.new(0.5, -2, 0.5, -2)
+            dot.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+            dot.BorderSizePixel = 0
+            dot.Parent = crosshairGui
+        elseif not state and crosshairGui then
             crosshairGui:Destroy()
             crosshairGui = nil
         end
     end
 
-    -------------------------------------------------------------
-    -- Toggles (UI)
-    -------------------------------------------------------------
-    makeSection("ESP / Overlays")
-    makeToggle("Name ESP", false, function(v) State.NameESP = v end)
-    makeToggle("Box ESP", false, function(v) State.BoxESP = v end)
-    makeToggle("Health ESP", false, function(v) State.HealthESP = v end)
-    makeToggle("Distance ESP", false, function(v) State.DistanceESP = v end)
-    makeToggle("Chams", false, function(v) State.Chams = v end)
-    makeToggle("Tracers", false, function(v)
-        State.Tracers = v
-        if not v and tracerUpdateConn then tracerUpdateConn:Disconnect(); tracerUpdateConn = nil end
-        if not v and cameraProxy then cameraProxy:Destroy(); cameraProxy = nil end
-    end)
-    makeToggle("Team Check", false, function(v) State.TeamCheck = v end)
+    local function updateLighting()
+        if ESPEnabled.Fullbright then
+            Lighting.Ambient = Color3.new(1, 1, 1)
+            Lighting.Brightness = 2
+        else
+            Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+            Lighting.Brightness = 1
+        end
 
-    makeSection("Lighting / HUD")
-    makeToggle("Fullbright", false, function(v)
-        State.Fullbright = v
-        Lighting.Ambient = v and Color3.new(1,1,1) or Color3.fromRGB(128,128,128)
-        Lighting.Brightness = v and 2 or 1
-    end)
-    makeToggle("No Fog", false, function(v)
-        State.NoFog = v
-        Lighting.FogEnd = v and 1e6 or 1000
-    end)
-    makeToggle("Crosshair", false, function(v)
-        State.Crosshair = v
-        setCrosshair(v)
+        Lighting.FogEnd = ESPEnabled.NoFog and 1e6 or 1000
+    end
+
+    ----------------------------------------------------------------
+    -- ESP Update Loop
+    ----------------------------------------------------------------
+    local function drawESP()
+        for _, obj in ipairs(espFolder:GetChildren()) do obj:Destroy() end
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                if ESPEnabled.TeamCheck and plr.Team == LocalPlayer.Team then
+                    continue
+                end
+
+                local hrp = plr.Character.HumanoidRootPart
+                local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                if onScreen then
+                    if ESPEnabled.Name then
+                        local nameLabel = Drawing.new("Text")
+                        nameLabel.Text = plr.Name
+                        nameLabel.Position = Vector2.new(screenPos.X, screenPos.Y - 15)
+                        nameLabel.Color = Color3.fromRGB(255, 255, 255)
+                        nameLabel.Size = 14
+                        nameLabel.Center = true
+                        nameLabel.Outline = true
+                        nameLabel.Visible = true
+                    end
+                    -- Weitere ESPs (Box, Health, Tracers etc.) hier analog
+                end
+            end
+        end
+    end
+
+    RunService.RenderStepped:Connect(function()
+        if ESPEnabled.Name or ESPEnabled.Box or ESPEnabled.Health or ESPEnabled.Distance or ESPEnabled.Tracers then
+            drawESP()
+        end
     end)
 
-    -------------------------------------------------------------
-    -- Return Frame
-    -------------------------------------------------------------
+    ----------------------------------------------------------------
+    -- UI Toggles
+    ----------------------------------------------------------------
+    makeSection("ESP & Visuals")
+    makeToggle("Name ESP", false, function(v) ESPEnabled.Name = v end)
+    makeToggle("Box ESP", false, function(v) ESPEnabled.Box = v end)
+    makeToggle("Health ESP", false, function(v) ESPEnabled.Health = v end)
+    makeToggle("Distance ESP", false, function(v) ESPEnabled.Distance = v end)
+    makeToggle("Chams", false, function(v) ESPEnabled.Chams = v end)
+    makeToggle("Tracers", false, function(v) ESPEnabled.Tracers = v end)
+    makeToggle("Team Check", false, function(v) ESPEnabled.TeamCheck = v end)
+
+    makeSection("Lighting & Extras")
+    makeToggle("Fullbright", false, function(v) ESPEnabled.Fullbright = v; updateLighting() end)
+    makeToggle("No Fog", false, function(v) ESPEnabled.NoFog = v; updateLighting() end)
+    makeToggle("Crosshair", false, function(v) ESPEnabled.Crosshair = v; setCrosshair(v) end)
+
     return frame
 end
