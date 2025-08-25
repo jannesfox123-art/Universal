@@ -1,508 +1,441 @@
---// Tab2.lua - Combat (Aimbot Mouse/CFrame + Keybind, FOV, Smooth, Prediction, Triggerbot, Hitbox, Reach, AutoClicker, Anti-Knockback)
---// Modul-API: return function(parent: Instance, settings: table) -> ScrollingFrame
 return function(parent, settings)
-    -- Services
-    local Players            = game:GetService("Players")
-    local RunService         = game:GetService("RunService")
-    local UserInputService   = game:GetService("UserInputService")
-    local TweenService       = game:GetService("TweenService")
-    local VirtualUser        = game:GetService("VirtualUser")
+    --// Services & Locals
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local UIS = game:GetService("UserInputService")
+    local TweenService = game:GetService("TweenService")
+    local Vim = game:GetService("VirtualInputManager")
+    local LocalPlayer = Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
+    local UserGameSettings = UserSettings():GetService("UserGameSettings")
 
-    local player = Players.LocalPlayer
-    local camera = workspace.CurrentCamera
-
-    -- ====== UI: Scroll-Container (übernimmt Theme/Font/TextSize) ======
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Name = "CombatTab"
-    scroll.Size = UDim2.new(1, 0, 1, 0)
-    scroll.BackgroundTransparency = 1
-    scroll.ScrollBarThickness = 6
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 1500)
-    scroll.Parent = parent
-
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 8)
-    layout.Parent = scroll
-
-    local function recolor(btn, active)
-        TweenService:Create(btn, TweenInfo.new(0.18), {
-            BackgroundColor3 = active and settings.Theme.TabButtonActive or settings.Theme.TabButton
-        }):Play()
+    --// Connection Manager (alles sauber trennen beim Destroy)
+    local connections = {}
+    local function bind(signal, fn)
+        local c = signal:Connect(fn)
+        table.insert(connections, c)
+        return c
+    end
+    local function cleanup()
+        for _, c in ipairs(connections) do
+            pcall(function() c:Disconnect() end)
+        end
     end
 
-    local function makeToggle(label, default, cb)
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(1, -20, 0, math.max(44, settings.TextSize + 16))
-        b.BackgroundColor3 = settings.Theme.TabButton
-        b.TextColor3 = settings.Theme.TabText
-        b.Font = settings.Font
-        b.TextSize = settings.TextSize
-        b.Text = string.format("%s: %s", label, default and "ON" or "OFF")
-        b.Parent = scroll
-        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
-        recolor(b, default)
-        local state = default
-        b.MouseButton1Click:Connect(function()
-            state = not state
-            b.Text = string.format("%s: %s", label, state and "ON" or "OFF")
-            recolor(b, state)
-            cb(state)
-        end)
-        return b
-    end
+    --// UI: ScrollingFrame
+    local root = Instance.new("ScrollingFrame")
+    root.Name = "CombatTab"
+    root.Size = UDim2.new(1, 0, 1, 0)
+    root.CanvasSize = UDim2.new(0, 0, 0, 1100)
+    root.ScrollBarThickness = 6
+    root.BackgroundTransparency = 1
+    root.Parent = parent
 
-    local function makeSlider(label, min, max, default, cb)
-        local frame = Instance.new("Frame")
-        frame.Size = UDim2.new(1, -20, 0, math.max(64, settings.TextSize + 32))
-        frame.BackgroundTransparency = 1
-        frame.Parent = scroll
+    local list = Instance.new("UIListLayout")
+    list.Parent = root
+    list.Padding = UDim.new(0, 8)
+    list.SortOrder = Enum.SortOrder.LayoutOrder
 
+    local function addSection(titleText)
         local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(0.92, 0, 0, 28)
         title.BackgroundTransparency = 1
-        title.TextColor3 = settings.Theme.TabText
+        title.Text = titleText
         title.Font = settings.Font
-        title.TextSize = settings.TextSize
+        title.TextSize = settings.TextSize + 2
+        title.TextColor3 = settings.Theme.TabText
         title.TextXAlignment = Enum.TextXAlignment.Left
-        title.Text = string.format("%s: %d", label, default)
-        title.Size = UDim2.new(1, 0, 0, settings.TextSize + 6)
-        title.Parent = frame
+        title.Parent = root
+        return title
+    end
+
+    local function makeToggle(label, default, callback)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.92, 0, 0, 40)
+        btn.AutoButtonColor = false
+        btn.BackgroundColor3 = settings.Theme.TabButton
+        btn.TextColor3 = settings.Theme.TabText
+        btn.Font = settings.Font
+        btn.TextSize = settings.TextSize
+        btn.Text = label .. ": " .. (default and "ON" or "OFF")
+        btn.Parent = root
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = btn
+
+        local state = default
+        bind(btn.MouseEnter, function()
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = settings.Theme.TabButtonHover or settings.Theme.TabButton}):Play()
+        end)
+        bind(btn.MouseLeave, function()
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = settings.Theme.TabButton}):Play()
+        end)
+        bind(btn.MouseButton1Click, function()
+            state = not state
+            btn.Text = label .. ": " .. (state and "ON" or "OFF")
+            TweenService:Create(btn, TweenInfo.new(0.15), {
+                BackgroundColor3 = state and (settings.Theme.TabButtonActive or settings.Theme.TabButton) or settings.Theme.TabButton
+            }):Play()
+            callback(state)
+        end)
+        return function(newState)
+            state = newState
+            btn.Text = label .. ": " .. (state and "ON" or "OFF")
+            callback(state)
+        end
+    end
+
+    local function makeSlider(label, minV, maxV, defaultV, callback)
+        local holder = Instance.new("Frame")
+        holder.Size = UDim2.new(0.92, 0, 0, 56)
+        holder.BackgroundTransparency = 1
+        holder.Parent = root
+
+        local txt = Instance.new("TextLabel")
+        txt.Size = UDim2.new(1, 0, 0, 22)
+        txt.BackgroundTransparency = 1
+        txt.Font = settings.Font
+        txt.TextSize = settings.TextSize
+        txt.TextXAlignment = Enum.TextXAlignment.Left
+        txt.TextColor3 = settings.Theme.TabText
+        txt.Text = ("%s: %s"):format(label, tostring(defaultV))
+        txt.Parent = holder
 
         local bar = Instance.new("Frame")
-        bar.Size = UDim2.new(1, 0, 0, 10)
-        bar.Position = UDim2.new(0, 0, 0, settings.TextSize + 18)
+        bar.Size = UDim2.new(1, 0, 0, 18)
+        bar.Position = UDim2.new(0, 0, 0, 30)
         bar.BackgroundColor3 = settings.Theme.TabButton
-        bar.Parent = frame
-        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+        bar.Parent = holder
+        local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = bar
 
         local fill = Instance.new("Frame")
-        fill.BackgroundColor3 = settings.Theme.TabButtonActive
-        fill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0)
+        fill.BackgroundColor3 = settings.Theme.TabButtonActive or settings.Theme.TabButton
+        fill.Size = UDim2.new((defaultV-minV)/(maxV-minV), 0, 1, 0)
         fill.Parent = bar
-        Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+        local fcorner = Instance.new("UICorner"); fcorner.CornerRadius = UDim.new(0, 8); fcorner.Parent = fill
 
         local dragging = false
-        local function setFromX(x)
-            local r = math.clamp((x - bar.AbsolutePosition.X) / math.max(1, bar.AbsoluteSize.X), 0, 1)
-            local v = math.floor(min + (max - min) * r + 0.5)
-            fill.Size = UDim2.new(r, 0, 1, 0)
-            title.Text = string.format("%s: %d", label, v)
-            cb(v)
-        end
-        bar.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging = true setFromX(i.Position.X) end end)
-        UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging = false end end)
-        UserInputService.InputChanged:Connect(function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then setFromX(i.Position.X) end end)
-        return frame
-    end
-
-    local function makeModeSwitch(label, modes, default, cb)
-        local idx = table.find(modes, default) or 1
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(1, -20, 0, math.max(44, settings.TextSize + 16))
-        b.BackgroundColor3 = settings.Theme.TabButton
-        b.TextColor3 = settings.Theme.TabText
-        b.Font = settings.Font
-        b.TextSize = settings.TextSize
-        b.Text = string.format("%s: %s", label, modes[idx])
-        b.Parent = scroll
-        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
-        b.MouseButton1Click:Connect(function()
-            idx = (idx % #modes) + 1
-            local v = modes[idx]
-            b.Text = string.format("%s: %s", label, v)
-            cb(v)
+        bind(bar.InputBegan, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
         end)
-        return b
-    end
-
-    local function makeKeybind(label, defaultEnum, cb)
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(1, -20, 0, math.max(44, settings.TextSize + 16))
-        b.BackgroundColor3 = settings.Theme.TabButton
-        b.TextColor3 = settings.Theme.TabText
-        b.Font = settings.Font
-        b.TextSize = settings.TextSize
-        b.Text = string.format("%s: %s", label, defaultEnum.Name)
-        b.Parent = scroll
-        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
-        b.MouseButton1Click:Connect(function()
-            b.Text = string.format("%s: [Taste drücken]", label)
-            local conn; conn = UserInputService.InputBegan:Connect(function(i, gp)
-                if gp then return end
-                if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.MouseButton2 then
-                    b.Text = string.format("%s: %s", label, i.UserInputType.Name)
-                    conn:Disconnect()
-                    cb(i.UserInputType)
-                end
-            end)
+        bind(UIS.InputEnded, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
         end)
-        return b
-    end
 
-    -- ====== Env / Executor Funktionen (best effort) ======
-    local function getFn(names)
-        local env = (getgenv and getgenv()) or {}
-        for _, n in ipairs(names) do
-            local f = rawget(env, n)
-            if typeof(f) == "function" then return f end
-        end
-        return nil
-    end
-    local mouseMoveAbs = getFn({"mousemoveabs","syn_mousemoveabs"})
-    local mouseMoveRel = getFn({"mousemoverel","syn_mousemoverel"})
-    local mouse1click  = getFn({"mouse1click"})
-    local mouse1press  = getFn({"mouse1press"})
-    local mouse1release= getFn({"mouse1release"})
+        local val = defaultV
+        bind(RunService.RenderStepped, function()
+            if not dragging then return end
+            local mX = UIS:GetMouseLocation().X
+            local x0 = bar.AbsolutePosition.X
+            local w = bar.AbsoluteSize.X
+            local ratio = math.clamp((mX - x0)/w, 0, 1)
+            val = math.floor(minV + (maxV-minV)*ratio + 0.5)
+            fill.Size = UDim2.new(ratio, 0, 1, 0)
+            txt.Text = ("%s: %s"):format(label, tostring(val))
+            callback(val)
+        end)
 
-    local VIM = nil
-    pcall(function() VIM = game:GetService("VirtualInputManager") end)
-
-    local function moveMouseTo(x, y)
-        if mouseMoveAbs then
-            mouseMoveAbs(x, y)
-        elseif mouseMoveRel then
-            local cur = UserInputService:GetMouseLocation()
-            mouseMoveRel(x - cur.X, y - cur.Y)
-        elseif VIM and VIM.SendMouseMoveEvent then
-            VIM:SendMouseMoveEvent(x, y, false)
+        -- init callback
+        callback(defaultV)
+        return function(newVal)
+            local ratio = math.clamp((newVal-minV)/(maxV-minV), 0, 1)
+            val = newVal
+            fill.Size = UDim2.new(ratio, 0, 1, 0)
+            txt.Text = ("%s: %s"):format(label, tostring(val))
+            callback(val)
         end
     end
 
-    local function clickOnce()
-        if mouse1click then
-            mouse1click()
-        elseif mouse1press and mouse1release then
-            mouse1press(); task.wait(0.016); mouse1release()
-        else
-            pcall(function()
-                VirtualUser:Button1Down(Vector2.new(), camera.CFrame)
-                task.wait(0.02)
-                VirtualUser:Button1Up(Vector2.new(), camera.CFrame)
-            end)
-        end
-    end
+    ----------------------------------------------------------------
+    -- Combat Settings (States)
+    ----------------------------------------------------------------
+    local AimbotEnabled = false
+    local AimbotFOV = 120
+    local AimbotPrediction = 0.10 -- seconds factor (0..3 via slider/100)
+    local AimbotSmooth = 6        -- base smooth, scaled by MouseSensitivity
+    local AimbotKey = Enum.UserInputType.MouseButton2
+    local AimingHeld = false
 
-    -- ====== State ======
-    local ignoreTeam           = true
+    local TriggerbotEnabled = false
+    local TriggerDelayMS = 80
 
-    local aimEnabled           = false
-    local aimMode              = "Mouse" -- "Mouse" | "CFrame"
-    local aimKey               = Enum.UserInputType.MouseButton2 -- RMB
-    local aimHeld              = false
-    local aimFOV               = 160
-    local aimSmoothPct         = 30   -- 0..100 (höher = weicher/langsamer)
-    local aimPredictionMs      = 60   -- 0..300
-    local stickyMs             = 450
+    local AutoClickEnabled = false
+    local AutoClickCPS = 8
 
-    local triggerEnabled       = false
-    local triggerDelayMs       = 80
+    local HitboxEnabled = false
+    local HitboxSize = 5
+    local HitboxTargets = {} -- track applied chars
 
-    local hitboxEnabled        = false
-    local hitboxScale          = 3
-    local hitboxTarget         = "Both" -- Head/HRP/Both
-    local originalSizes        = {}     -- plr -> {Head=Vector3, HRP=Vector3}
+    local ReachEnabled = false
+    local ReachDistance = 18
 
-    local reachEnabled         = false
-    local reachStuds           = 14
-    local mouseDown            = false
+    local AntiKBEnabled = false
 
-    local autoClickEnabled     = false
-    local autoCPS              = 12
-
-    local antiKBEnabled        = false
-    local reduceKBPercent      = 0
-
-    -- ====== FOV-Visual (Drawing oder UI-Fallback) ======
-    local useDrawing = pcall(function() return Drawing and Drawing.new end)
-    local fovCircle, fovUI
-    if useDrawing then
-        fovCircle = Drawing.new("Circle")
-        fovCircle.Color = settings.Theme.TabButtonActive
-        fovCircle.Thickness = 2
-        fovCircle.Filled = false
-        fovCircle.NumSides = 100
-        fovCircle.Radius = aimFOV
-        fovCircle.Visible = false
-    else
-        fovUI = Instance.new("Frame")
-        fovUI.Size = UDim2.new(0, aimFOV*2, 0, aimFOV*2)
-        fovUI.AnchorPoint = Vector2.new(.5,.5)
-        fovUI.Position = UDim2.new(0, camera.ViewportSize.X/2, 0, camera.ViewportSize.Y/2)
-        fovUI.BackgroundTransparency = 1
-        fovUI.Visible = false
-        fovUI.Parent = scroll
-        local stroke = Instance.new("UIStroke", fovUI)
-        stroke.Thickness = 2
-        stroke.Color = settings.Theme.TabButtonActive
-        local corner = Instance.new("UICorner", fovUI)
-        corner.CornerRadius = UDim.new(1, 0)
-    end
-    local function setFOVVisible(v) if fovCircle then fovCircle.Visible = v end if fovUI then fovUI.Visible = v end end
-    local function setFOVRadius(r) if fovCircle then fovCircle.Radius = r end if fovUI then fovUI.Size = UDim2.new(0, r*2, 0, r*2) end end
-    RunService.RenderStepped:Connect(function()
-        local m = UserInputService:GetMouseLocation()
-        if fovCircle then fovCircle.Position = m end
-        if fovUI then fovUI.Position = UDim2.new(0, m.X, 0, m.Y) end
-    end)
-
-    -- ====== Helpers ======
-    local function teammate(plr)
-        if player.Team and plr.Team then return player.Team == plr.Team end
-        return false
-    end
-    local function aimPart(char)
-        return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
-    end
-    local function toScreen(v3)
-        local v2, on = camera:WorldToViewportPoint(v3)
+    ----------------------------------------------------------------
+    -- Helpers
+    ----------------------------------------------------------------
+    local function screenPos(v3)
+        local v2, on = Camera:WorldToViewportPoint(v3)
         return Vector2.new(v2.X, v2.Y), on
     end
 
-    -- ====== UI Controls ======
-    makeToggle("Ignore Teammates", true, function(v) ignoreTeam = v end)
-
-    makeToggle("Aimbot", false, function(v) aimEnabled = v setFOVVisible(v) end)
-    makeModeSwitch("Aimbot Modus", {"Mouse","CFrame"}, "Mouse", function(m) aimMode = m end)
-    makeKeybind("Aim Key", aimKey, function(k) aimKey = k end)
-    makeSlider("Aimbot FOV", 30, 400, aimFOV, function(v) aimFOV = v setFOVRadius(v) end)
-    makeSlider("Smoothness %", 0, 100, aimSmoothPct, function(v) aimSmoothPct = v end)
-    makeSlider("Prediction ms", 0, 300, aimPredictionMs, function(v) aimPredictionMs = v end)
-    makeSlider("Sticky (ms)", 0, 1000, stickyMs, function(v) stickyMs = v end)
-
-    makeToggle("Triggerbot", false, function(v) triggerEnabled = v end)
-    makeSlider("Trigger Delay (ms)", 0, 300, triggerDelayMs, function(v) triggerDelayMs = v end)
-
-    makeToggle("Hitbox Expander", false, function(v)
-        hitboxEnabled = v
-        if not v then
-            for plr, data in pairs(originalSizes) do
-                if plr.Character then
-                    local h = plr.Character:FindFirstChild("Head")
-                    local r = plr.Character:FindFirstChild("HumanoidRootPart")
-                    if h and data.Head then h.Size = data.Head end
-                    if r and data.HRP  then r.Size = data.HRP  end
-                end
-            end
-        end
-    end)
-    makeModeSwitch("Hitbox Ziel", {"Head","HRP","Both"}, "Both", function(m) hitboxTarget = m end)
-    makeSlider("Hitbox Scale", 1, 6, hitboxScale, function(v) hitboxScale = v end)
-
-    makeToggle("Reach", false, function(v) reachEnabled = v end)
-    makeSlider("Reach (studs)", 6, 30, reachStuds, function(v) reachStuds = v end)
-
-    makeToggle("Auto Clicker", false, function(v) autoClickEnabled = v end)
-    makeSlider("CPS", 1, 25, autoCPS, function(v) autoCPS = v end)
-
-    makeToggle("Anti-Knockback", false, function(v) antiKBEnabled = v end)
-    makeSlider("Knockback Reduce %", 0, 100, reduceKBPercent, function(v) reduceKBPercent = v end)
-
-    -- ====== Input (Aim Key hold) ======
-    UserInputService.InputBegan:Connect(function(i, gp)
-        if gp then return end
-        if i.UserInputType == aimKey then aimHeld = true end
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then mouseDown = true end
-    end)
-    UserInputService.InputEnded:Connect(function(i, gp)
-        if gp then return end
-        if i.UserInputType == aimKey then aimHeld = false end
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then mouseDown = false end
-    end)
-
-    -- ====== Targeting ======
-    local lockedPart, lockedChar, stickyUntil = nil, nil, 0
-
-    local function validTarget(plr)
-        if not plr or plr == player then return false end
-        if ignoreTeam and teammate(plr) then return false end
-        return plr.Character and plr.Character.Parent ~= nil and plr.Character:FindFirstChild("Humanoid")
-    end
-
-    local function pickTarget()
-        local mpos = UserInputService:GetMouseLocation()
-        local best, bestChar, bestMag = nil, nil, math.huge
+    local function getClosestHeadInFOV()
+        local mousePos = UIS:GetMouseLocation()
+        local best, bestMag, bestPart = nil, math.huge, nil
         for _, plr in ipairs(Players:GetPlayers()) do
-            if validTarget(plr) then
-                local ap = aimPart(plr.Character)
-                if ap then
-                    local sp, on = toScreen(ap.Position)
-                    if on then
-                        local d = (sp - mpos).Magnitude
-                        if d < bestMag and d <= aimFOV then
-                            best, bestChar, bestMag = ap, plr.Character, d
-                        end
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
+                local head = plr.Character.Head
+                local v2, on = screenPos(head.Position)
+                if on then
+                    local mag = (v2 - mousePos).Magnitude
+                    if mag < bestMag and mag <= AimbotFOV then
+                        best, bestMag, bestPart = plr, mag, head
                     end
                 end
             end
         end
-        return best, bestChar
+        return best, bestPart
     end
 
-    local function stillValid(ap, ch)
-        if not ap or not ch or not ch.Parent then return false end
-        local mpos = UserInputService:GetMouseLocation()
-        local sp, on = toScreen(ap.Position)
-        if not on then return false end
-        if (sp - mpos).Magnitude > aimFOV then return false end
-        return true
+    local function smoothAimTo(targetPos, dt)
+        -- Sensitivity-aware smoothing
+        local sens = UserGameSettings.MouseSensitivity
+        local current = Camera.CFrame
+        local target = CFrame.new(current.Position, targetPos)
+        local alpha = math.clamp(dt * (AimbotSmooth * sens), 0, 1)
+        Camera.CFrame = current:Lerp(target, alpha)
     end
 
-    -- ====== AIMBOT LOOP ======
-    local lastCamCF = camera.CFrame
-    RunService.RenderStepped:Connect(function()
-        -- FOV pos wird oben separat aktualisiert
-
-        if not (aimEnabled and aimHeld) then return end
-
-        -- Ziel halten, ggf. neu wählen
-        if lockedPart and lockedChar and stillValid(lockedPart, lockedChar) and os.clock() < stickyUntil then
-            -- keep
-        else
-            lockedPart, lockedChar = pickTarget()
-            stickyUntil = os.clock() + (stickyMs/1000)
-        end
-        if not lockedPart then return end
-
-        local lead = aimPredictionMs / 1000
-        local vel  = lockedPart.AssemblyLinearVelocity or Vector3.zero
-        local predicted = lockedPart.Position + vel * lead
-
-        if aimMode == "CFrame" then
-            local targetCF = CFrame.new(camera.CFrame.Position, predicted)
-            local alpha = math.clamp(aimSmoothPct/100, 0, 1)
-            camera.CFrame = lastCamCF:Lerp(targetCF, alpha > 0 and alpha or 1)
-            lastCamCF = camera.CFrame
-        else
-            local sp, on = toScreen(predicted)
-            if on then
-                local cur = UserInputService:GetMouseLocation()
-                -- Smoothness: höher => weniger Schritt => weicher
-                local stepFactor = math.clamp(1 - (aimSmoothPct/100), 0.02, 1)
-                moveMouseTo(cur.X + (sp.X - cur.X)*stepFactor, cur.Y + (sp.Y - cur.Y)*stepFactor)
-            end
-        end
+    ----------------------------------------------------------------
+    -- FOV Circle (Drawing API; falls nicht vorhanden -> ignorieren)
+    ----------------------------------------------------------------
+    local fovCircle
+    pcall(function()
+        fovCircle = Drawing.new("Circle")
+        fovCircle.Visible = false
+        fovCircle.Radius = AimbotFOV
+        fovCircle.Thickness = 2
+        fovCircle.NumSides = 64
+        fovCircle.Filled = false
+        fovCircle.Color = settings.Theme.Highlight or Color3.fromRGB(255,255,255)
     end)
 
-    -- ====== TRIGGERBOT LOOP ======
-    task.spawn(function()
-        while scroll.Parent do
-            if triggerEnabled and aimHeld then
-                local m = UserInputService:GetMouseLocation()
-                local ray = camera:ViewportPointToRay(m.X, m.Y)
-                local params = RaycastParams.new()
-                params.FilterDescendantsInstances = {player.Character}
-                params.FilterType = Enum.RaycastFilterType.Blacklist
-                local rc = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
-                local shoot = false
-                if rc and rc.Instance then
-                    local mdl = rc.Instance:FindFirstAncestorOfClass("Model")
-                    if mdl and mdl:FindFirstChildOfClass("Humanoid") then
-                        local plr = Players:GetPlayerFromCharacter(mdl)
-                        if validTarget(plr) then shoot = true end
-                    end
-                end
-                if shoot then
-                    task.wait(triggerDelayMs/1000)
-                    clickOnce()
-                end
-            end
-            task.wait(0.01)
-        end
-    end)
-
-    -- ====== HITBOX EXPANDER ======
-    RunService.Heartbeat:Connect(function()
-        if not hitboxEnabled then return end
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if validTarget(plr) then
-                originalSizes[plr] = originalSizes[plr] or {}
-                local h = plr.Character:FindFirstChild("Head")
-                local r = plr.Character:FindFirstChild("HumanoidRootPart")
-                if h then originalSizes[plr].Head = originalSizes[plr].Head or h.Size end
-                if r then originalSizes[plr].HRP  = originalSizes[plr].HRP  or r.Size end
-                if hitboxTarget == "Head" or hitboxTarget == "Both" then
-                    if h then
-                        h.Size = Vector3.new(2,2,2) * hitboxScale
-                        h.Massless = true
-                        h.CanCollide = false
-                    end
-                end
-                if hitboxTarget == "HRP" or hitboxTarget == "Both" then
-                    if r then
-                        r.Size = Vector3.new(2,2,1) * hitboxScale
-                        r.Massless = true
-                        r.CanCollide = false
-                    end
-                end
-            end
-        end
-    end)
-
-    -- ====== REACH (generischer Assist bei M1 gehalten) ======
-    task.spawn(function()
-        while scroll.Parent do
-            if reachEnabled and mouseDown then
-                local origin = camera.CFrame.Position
-                local dir = camera.CFrame.LookVector * reachStuds
-                local params = RaycastParams.new()
-                params.FilterDescendantsInstances = {player.Character}
-                params.FilterType = Enum.RaycastFilterType.Blacklist
-                local rc = workspace:Raycast(origin, dir, params)
-                if rc then
-                    clickOnce() -- generischer „Hit“-Impuls
-                end
-            end
-            task.wait(0.03)
-        end
-    end)
-
-    -- ====== AUTO CLICKER ======
-    task.spawn(function()
-        while scroll.Parent do
-            if autoClickEnabled and autoCPS > 0 then
-                clickOnce()
-                task.wait(1 / math.clamp(autoCPS, 1, 50))
+    bind(RunService.RenderStepped, function()
+        if fovCircle then
+            if AimbotEnabled then
+                fovCircle.Visible = true
+                fovCircle.Radius = AimbotFOV
+                fovCircle.Position = UIS:GetMouseLocation()
             else
-                task.wait(0.08)
+                fovCircle.Visible = false
             end
         end
     end)
 
-    -- ====== KNOCKBACK CONTROL ======
-    local function hookChar(c)
-        local hrp = c:WaitForChild("HumanoidRootPart", 6)
-        if not hrp then return end
-        local function onVel()
-            if antiKBEnabled then
-                hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
-                hrp.AssemblyAngularVelocity = Vector3.zero
-            elseif reduceKBPercent > 0 then
-                local f = 1 - (reduceKBPercent/100)
-                hrp.AssemblyLinearVelocity = Vector3.new(
-                    hrp.AssemblyLinearVelocity.X * f,
-                    hrp.AssemblyLinearVelocity.Y,
-                    hrp.AssemblyLinearVelocity.Z * f
-                )
-                hrp.AssemblyAngularVelocity *= f
+    ----------------------------------------------------------------
+    -- INPUT: Aimbot Key (RMB hold)
+    ----------------------------------------------------------------
+    bind(UIS.InputBegan, function(input, gp)
+        if gp then return end
+        if input.UserInputType == AimbotKey then
+            AimingHeld = true
+        end
+    end)
+    bind(UIS.InputEnded, function(input)
+        if input.UserInputType == AimbotKey then
+            AimingHeld = false
+        end
+    end)
+
+    ----------------------------------------------------------------
+    -- CORE LOOPS
+    ----------------------------------------------------------------
+    -- Aimbot Loop
+    bind(RunService.RenderStepped, function(dt)
+        if not (AimbotEnabled and AimingHeld) then return end
+        local plr, head = getClosestHeadInFOV()
+        if not head then return end
+        local predicted = head.Position + (head.Velocity * AimbotPrediction)
+        smoothAimTo(predicted, dt)
+    end)
+
+    -- Triggerbot Loop (ray vom Bildschirmzentrum/Maus)
+    local lastTrigger = 0
+    bind(RunService.RenderStepped, function()
+        if not (TriggerbotEnabled and AimingHeld) then return end
+        local now = time()
+        if (now - lastTrigger) * 1000 < TriggerDelayMS then return end
+
+        local mousePos = UIS:GetMouseLocation()
+        local unitRay = Camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+        local rayResult = workspace:Raycast(unitRay.Origin, unitRay.Direction * 10000)
+
+        if rayResult and rayResult.Instance then
+            local model = rayResult.Instance:FindFirstAncestorOfClass("Model")
+            if model and model:FindFirstChildOfClass("Humanoid") and model ~= LocalPlayer.Character then
+                -- Klick simulieren (VirtualInputManager)
+                Vim:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 0)
+                Vim:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 0)
+                lastTrigger = now
             end
         end
-        hrp:GetPropertyChangedSignal("AssemblyLinearVelocity"):Connect(onVel)
-        hrp:GetPropertyChangedSignal("AssemblyAngularVelocity"):Connect(onVel)
+    end)
+
+    -- Auto Clicker Loop
+    local clickAccumulator = 0
+    bind(RunService.RenderStepped, function(dt)
+        if not AutoClickEnabled then return end
+        local cps = math.clamp(AutoClickCPS, 1, 30)
+        clickAccumulator = clickAccumulator + dt
+        local interval = 1 / cps
+        while clickAccumulator >= interval do
+            clickAccumulator = clickAccumulator - interval
+            local m = UIS:GetMouseLocation()
+            Vim:SendMouseButtonEvent(m.X, m.Y, 0, true, game, 0)
+            Vim:SendMouseButtonEvent(m.X, m.Y, 0, false, game, 0)
+        end
+    end)
+
+    -- Anti-Knockback Loop (reduziert horizontale Velocity & disabled Knockback States)
+    local function applyAntiKB()
+        local char = LocalPlayer.Character
+        if not (char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid")) then return end
+        local hrp = char.HumanoidRootPart
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        -- leichte Dämpfung horizontal (behält Y für Sprünge)
+        hrp.Velocity = Vector3.new(0, hrp.Velocity.Y, 0)
+        -- unterdrücke ausgewählte Humanoid States
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
+        end)
     end
-    if player.Character then hookChar(player.Character) end
-    player.CharacterAdded:Connect(hookChar)
 
-    -- ====== Cleanup ======
-    scroll.Destroying:Connect(function()
-        if fovCircle then pcall(function() fovCircle.Visible = false fovCircle:Remove() end) end
-        for plr, data in pairs(originalSizes) do
-            if plr.Character then
-                local h = plr.Character:FindFirstChild("Head")
-                local r = plr.Character:FindFirstChild("HumanoidRootPart")
-                if h and data.Head then h.Size = data.Head end
-                if r and data.HRP  then r.Size = data.HRP  end
+    bind(RunService.Heartbeat, function()
+        if AntiKBEnabled then applyAntiKB() end
+    end)
+
+    -- Hitbox Expander (apply/remove)
+    local function applyHitbox(plr)
+        if not (plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")) then return end
+        local hrp = plr.Character.HumanoidRootPart
+        if not HitboxTargets[plr] then
+            HitboxTargets[plr] = hrp.Size
+        end
+        pcall(function()
+            hrp.CanCollide = false
+            hrp.Size = Vector3.new(HitboxSize, HitboxSize, HitboxSize)
+            hrp.Transparency = 0.7
+        end)
+    end
+    local function revertHitbox(plr)
+        if not (plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")) then return end
+        local hrp = plr.Character.HumanoidRootPart
+        local orig = HitboxTargets[plr]
+        pcall(function()
+            hrp.Transparency = 1
+            hrp.Size = orig or Vector3.new(2, 2, 1)
+            hrp.CanCollide = false
+        end)
+        HitboxTargets[plr] = nil
+    end
+
+    local function refreshHitboxes()
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                if HitboxEnabled then applyHitbox(plr) else revertHitbox(plr) end
+            end
+        end
+    end
+
+    bind(Players.PlayerAdded, function(plr)
+        if HitboxEnabled then
+            bind(plr.CharacterAdded, function()
+                task.wait(0.2)
+                applyHitbox(plr)
+            end)
+        end
+    end)
+
+    -- Reach (Tool Handle größer & Raycast Reichweite)
+    local function applyReach()
+        if not ReachEnabled then return end
+        local char = LocalPlayer.Character
+        if not (char and char:FindFirstChildOfClass("Tool")) then return end
+        local tool = char:FindFirstChildOfClass("Tool")
+        local handle = tool:FindFirstChild("Handle")
+        if handle and handle:IsA("BasePart") then
+            pcall(function()
+                handle.Size = Vector3.new(ReachDistance/3, handle.Size.Y, ReachDistance/3)
+                handle.Massless = true
+                handle.CanCollide = false
+                handle.Transparency = 0.5
+            end)
+        end
+    end
+
+    bind(RunService.RenderStepped, function()
+        if ReachEnabled then applyReach() end
+    end)
+
+    ----------------------------------------------------------------
+    -- UI CONTROLS
+    ----------------------------------------------------------------
+    addSection("Aimbot")
+
+    makeToggle("Aimbot", false, function(b) AimbotEnabled = b end)
+
+    makeSlider("FOV", 30, 300, AimbotFOV, function(v) AimbotFOV = v end)
+
+    makeSlider("Smooth (base)", 1, 20, AimbotSmooth, function(v) AimbotSmooth = v end)
+
+    makeSlider("Prediction (x100)", 0, 300, math.floor(AimbotPrediction*100), function(v)
+        AimbotPrediction = v/100
+    end)
+
+    addSection("Triggerbot")
+    makeToggle("Triggerbot", false, function(b) TriggerbotEnabled = b end)
+    makeSlider("Delay (ms)", 0, 400, TriggerDelayMS, function(v) TriggerDelayMS = v end)
+
+    addSection("Click/Reach")
+    makeToggle("Auto Clicker", false, function(b) AutoClickEnabled = b end)
+    makeSlider("AutoClick CPS", 1, 30, AutoClickCPS, function(v) AutoClickCPS = v end)
+
+    makeToggle("Reach", false, function(b)
+        ReachEnabled = b
+    end)
+    makeSlider("Reach Distance", 10, 30, ReachDistance, function(v) ReachDistance = v end)
+
+    addSection("Hitbox & Knockback")
+    makeToggle("Hitbox Expander", false, function(b)
+        HitboxEnabled = b
+        refreshHitboxes()
+    end)
+    makeSlider("Hitbox Size", 2, 12, HitboxSize, function(v)
+        HitboxSize = v
+        if HitboxEnabled then refreshHitboxes() end
+    end)
+
+    makeToggle("Anti-Knockback", false, function(b)
+        AntiKBEnabled = b
+    end)
+
+    ----------------------------------------------------------------
+    -- Tab Lifecycle: wenn der Tab zerstört wird, alles trennen & zurücksetzen
+    ----------------------------------------------------------------
+    bind(root.AncestryChanged, function(_, parentNow)
+        if parentNow == nil then
+            cleanup()
+            -- FOV Circle löschen
+            pcall(function() if fovCircle then fovCircle.Visible = false; fovCircle:Remove() end end)
+            -- Hitboxes resetten
+            for plr, _ in pairs(HitboxTargets) do
+                pcall(function() revertHitbox(plr) end)
             end
         end
     end)
 
-    return scroll
+    return root
 end
