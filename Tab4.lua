@@ -1,4 +1,4 @@
--- Tab4.lua — Visuals Full Featured
+-- Tab4_Visuals.lua — Full Functional Visuals Tab
 return function(parent, settings)
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
@@ -85,6 +85,7 @@ return function(parent, settings)
     }
 
     local activeESP = {}
+    local crosshairDrawings = {}
 
     local function clearPlayerESP(plr)
         if activeESP[plr] then
@@ -108,88 +109,94 @@ return function(parent, settings)
         if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then return end
         if ESPEnabled.TeamCheck and plr.Team == LocalPlayer.Team then return end
 
-        activeESP[plr] = {}
         local hrp = plr.Character.HumanoidRootPart
         local humanoid = plr.Character:FindFirstChild("Humanoid")
         local head = plr.Character:FindFirstChild("Head")
 
-        local function step()
-            if not plr.Character or not hrp or not Camera then return end
-            local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-            if not onScreen then return end
+        local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+        if not onScreen then return end
+
+        local objs = {}
+
+        -- Name ESP (bei Füßen)
+        if ESPEnabled.Name then
             local footPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
-
-            local objs = {}
-
-            -- Name ESP (bei Füßen)
-            if ESPEnabled.Name then
-                table.insert(objs, createDrawing("Text", {
-                    Text = plr.Name,
-                    Position = Vector2.new(footPos.X, footPos.Y + 15),
-                    Color = Color3.fromRGB(255, 255, 255),
-                    Size = 14,
-                    Center = true,
-                    Outline = true,
-                    Visible = true
-                }))
-            end
-
-            -- Health ESP (Text)
-            if ESPEnabled.Health and humanoid then
-                table.insert(objs, createDrawing("Text", {
-                    Text = "HP: " .. math.floor(humanoid.Health),
-                    Position = Vector2.new(screenPos.X, screenPos.Y - 30),
-                    Color = Color3.fromRGB(0, 255, 0),
-                    Size = 14,
-                    Center = true,
-                    Outline = true,
-                    Visible = true
-                }))
-            end
-
-            -- Distance ESP
-            if ESPEnabled.Distance then
-                local dist = (hrp.Position - Camera.CFrame.Position).Magnitude
-                table.insert(objs, createDrawing("Text", {
-                    Text = string.format("%.1f m", dist),
-                    Position = Vector2.new(screenPos.X, screenPos.Y - 45),
-                    Color = Color3.fromRGB(0, 200, 255),
-                    Size = 14,
-                    Center = true,
-                    Outline = true,
-                    Visible = true
-                }))
-            end
-
-            -- Box ESP (feste Größe)
-            if ESPEnabled.Box and head then
-                local height = 100
-                local width = 50
-                table.insert(objs, createDrawing("Square", {
-                    Size = Vector2.new(width, height),
-                    Position = Vector2.new(screenPos.X - width/2, screenPos.Y - height/2),
-                    Color = Color3.fromRGB(255, 0, 0),
-                    Thickness = 2,
-                    Filled = false,
-                    Visible = true
-                }))
-            end
-
-            -- Tracers
-            if ESPEnabled.Tracers then
-                table.insert(objs, createDrawing("Line", {
-                    From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y),
-                    To = Vector2.new(footPos.X, footPos.Y),
-                    Color = Color3.fromRGB(255, 255, 0),
-                    Thickness = 1.5,
-                    Visible = true
-                }))
-            end
-
-            activeESP[plr] = objs
+            table.insert(objs, createDrawing("Text", {
+                Text = plr.Name,
+                Position = Vector2.new(footPos.X, footPos.Y + 15),
+                Color = Color3.fromRGB(255, 255, 255),
+                Size = 14,
+                Center = true,
+                Outline = true,
+                Visible = true
+            }))
         end
 
-        step()
+        -- Health ESP (Text)
+        if ESPEnabled.Health and humanoid then
+            table.insert(objs, createDrawing("Text", {
+                Text = "HP: " .. math.floor(humanoid.Health),
+                Position = Vector2.new(screenPos.X, screenPos.Y - 30),
+                Color = Color3.fromRGB(0, 255, 0),
+                Size = 14,
+                Center = true,
+                Outline = true,
+                Visible = true
+            }))
+        end
+
+        -- Distance ESP
+        if ESPEnabled.Distance then
+            local dist = (hrp.Position - Camera.CFrame.Position).Magnitude
+            table.insert(objs, createDrawing("Text", {
+                Text = string.format("%.1f m", dist),
+                Position = Vector2.new(screenPos.X, screenPos.Y - 45),
+                Color = Color3.fromRGB(0, 200, 255),
+                Size = 14,
+                Center = true,
+                Outline = true,
+                Visible = true
+            }))
+        end
+
+        -- Box ESP (feste, intelligente Größe)
+        if ESPEnabled.Box and head then
+            local boxHeight = 80
+            local boxWidth = 40
+            table.insert(objs, createDrawing("Square", {
+                Size = Vector2.new(boxWidth, boxHeight),
+                Position = Vector2.new(screenPos.X - boxWidth/2, screenPos.Y - boxHeight/2),
+                Color = Color3.fromRGB(255, 0, 0),
+                Thickness = 2,
+                Filled = false,
+                Visible = true
+            }))
+        end
+
+        -- Tracers
+        if ESPEnabled.Tracers then
+            local footPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+            table.insert(objs, createDrawing("Line", {
+                From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y),
+                To = Vector2.new(footPos.X, footPos.Y),
+                Color = Color3.fromRGB(255, 255, 0),
+                Thickness = 1.5,
+                Visible = true
+            }))
+        end
+
+        -- Chams (vereinfachte Variante)
+        if ESPEnabled.Chams and hrp.Parent then
+            for _, part in ipairs(hrp.Parent:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.Material = Enum.Material.ForceField
+                    part.Color = plr.Team == LocalPlayer.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+                    part.Transparency = 0.5
+                end
+            end
+        end
+
+        activeESP[plr] = objs
     end
 
     local function updateAllESP()
@@ -208,10 +215,33 @@ return function(parent, settings)
         end)
     end)
 
+    -- Crosshair Drawing
+    local function updateCrosshair()
+        for _, d in ipairs(crosshairDrawings) do d:Remove() end
+        crosshairDrawings = {}
+        if not ESPEnabled.Crosshair then return end
+        local center = Camera.ViewportSize / 2
+        table.insert(crosshairDrawings, createDrawing("Line", {
+            From = Vector2.new(center.X - 10, center.Y),
+            To = Vector2.new(center.X + 10, center.Y),
+            Color = Color3.new(1, 1, 1),
+            Thickness = 1.5,
+            Visible = true
+        }))
+        table.insert(crosshairDrawings, createDrawing("Line", {
+            From = Vector2.new(center.X, center.Y - 10),
+            To = Vector2.new(center.X, center.Y + 10),
+            Color = Color3.new(1, 1, 1),
+            Thickness = 1.5,
+            Visible = true
+        }))
+    end
+
     RunService.RenderStepped:Connect(function()
         for plr, _ in pairs(activeESP) do
             updatePlayerESP(plr)
         end
+        updateCrosshair()
     end)
 
     ----------------------------------------------------------------
@@ -220,13 +250,11 @@ return function(parent, settings)
     makeSection("ESP & Visuals")
     makeToggle("Name ESP", false, function(v) ESPEnabled.Name = v; updateAllESP() end)
     makeToggle("Box ESP", false, function(v) ESPEnabled.Box = v; updateAllESP() end)
-    makeToggle("Health ESP (Text)", false, function(v) ESPEnabled.Health = v; updateAllESP() end)
+    makeToggle("Health ESP", false, function(v) ESPEnabled.Health = v; updateAllESP() end)
     makeToggle("Distance ESP", false, function(v) ESPEnabled.Distance = v; updateAllESP() end)
     makeToggle("Tracers", false, function(v) ESPEnabled.Tracers = v; updateAllESP() end)
     makeToggle("Team Check", false, function(v) ESPEnabled.TeamCheck = v; updateAllESP() end)
-
-    -- Optional: Chams, Fullbright, NoFog, Crosshair (Dummy-Implementierung)
-    makeToggle("Chams", false, function(v) ESPEnabled.Chams = v end)
+    makeToggle("Chams", false, function(v) ESPEnabled.Chams = v; updateAllESP() end)
     makeToggle("Fullbright", false, function(v)
         ESPEnabled.Fullbright = v
         if v then
@@ -245,7 +273,7 @@ return function(parent, settings)
             Lighting.FogEnd = 1000
         end
     end)
-    makeToggle("Crosshair", false, function(v) ESPEnabled.Crosshair = v end)
+    makeToggle("Crosshair", false, function(v) ESPEnabled.Crosshair = v; updateCrosshair() end)
 
     return frame
 end
