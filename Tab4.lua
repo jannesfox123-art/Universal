@@ -1,8 +1,11 @@
--- Tab4.lua — VISUALS (Full • Advanced Hitbox Boxes • Clean)
--- Rückgabe: Frame (Tab-Container), kompatibel mit deinem Main-Script
+--// Tab4.lua — VISUALS (Full Features, Advanced, Clean)
+--// Rückgabe: Frame (Tab-Container), vollständig kompatibel mit deinem Main-Script
+--// Erfordert: settings = { Theme = { TabButton, TabButtonHover, TabButtonActive, TabText }, Font, TextSize, [ControlWidth?] }
 
 return function(parent, settings)
-    --// Services & Locals
+    ----------------------------------------------------------------
+    -- Services & Locals
+    ----------------------------------------------------------------
     local Players        = game:GetService("Players")
     local RunService     = game:GetService("RunService")
     local TweenService   = game:GetService("TweenService")
@@ -10,9 +13,9 @@ return function(parent, settings)
     local LocalPlayer    = Players.LocalPlayer
     local Camera         = workspace.CurrentCamera
 
-    --////////////////////////////////////////////////////////////////
-    -- UI: Tab-Container + Scrollbereich (gleiches Layout wie Tab1)
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- UI — Container
+    ----------------------------------------------------------------
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, 0, 1, 0)
     frame.BackgroundTransparency = 1
@@ -35,17 +38,18 @@ return function(parent, settings)
 
     local function autoCanvas()
         task.defer(function()
-            scroll.CanvasSize = UDim2.new(0, 0, 0, math.max(list.AbsoluteContentSize.Y + 20, scroll.AbsoluteSize.Y))
+            local y = list.AbsoluteContentSize.Y
+            scroll.CanvasSize = UDim2.new(0, 0, 0, math.max(y + 20, scroll.AbsoluteSize.Y))
         end)
     end
     list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(autoCanvas)
     scroll.ChildAdded:Connect(autoCanvas)
     scroll.ChildRemoved:Connect(autoCanvas)
 
-    --////////////////////////////////////////////////////////////////
-    -- UI: Sections + breite Toggle-Buttons (Tab1-Style)
-    --////////////////////////////////////////////////////////////////
-    local CONTROL_WIDTH  = settings.ControlWidth or 380  -- leicht breiter „damit es passt“
+    ----------------------------------------------------------------
+    -- UI — Helpers (Section & breite Toggles)
+    ----------------------------------------------------------------
+    local CONTROL_WIDTH  = settings.ControlWidth or 392 -- schön breit „wie Tab 1, etwas breiter“
     local CONTROL_HEIGHT = 44
 
     local function makeSection(title: string)
@@ -61,7 +65,7 @@ return function(parent, settings)
         return lbl
     end
 
-    local function makeToggle(labelText: string, default: boolean, onToggle: (boolean) -> ())
+    local function makeToggle(labelText: string, default: boolean, onToggle: (boolean)->())
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, CONTROL_WIDTH, 0, CONTROL_HEIGHT)
         btn.BackgroundColor3 = settings.Theme.TabButton
@@ -77,29 +81,23 @@ return function(parent, settings)
         corner.CornerRadius = UDim.new(0, 10)
         corner.Parent = btn
 
-        -- Toggle-Pill rechts
+        -- Toggle pill (rechts)
         local pill = Instance.new("Frame")
         pill.AnchorPoint = Vector2.new(1, 0.5)
         pill.Position = UDim2.new(1, -10, 0.5, 0)
-        pill.Size = UDim2.new(0, 58, 0, 26)
+        pill.Size = UDim2.new(0, 64, 0, 28)
         pill.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
         pill.BorderSizePixel = 0
         pill.Parent = btn
-
-        local pillCorner = Instance.new("UICorner")
-        pillCorner.CornerRadius = UDim.new(1, 0)
-        pillCorner.Parent = pill
+        local pillCorner = Instance.new("UICorner"); pillCorner.CornerRadius = UDim.new(1, 0); pillCorner.Parent = pill
 
         local knob = Instance.new("Frame")
         knob.Size = UDim2.new(0, 24, 0, 24)
-        knob.Position = UDim2.new(0, 1, 0, 1)
+        knob.Position = UDim2.new(0, 2, 0, 2)
         knob.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
         knob.BorderSizePixel = 0
         knob.Parent = pill
-
-        local knobCorner = Instance.new("UICorner")
-        knobCorner.CornerRadius = UDim.new(1, 0)
-        knobCorner.Parent = knob
+        local knobCorner = Instance.new("UICorner"); knobCorner.CornerRadius = UDim.new(1, 0); knobCorner.Parent = knob
 
         local enabled = default or false
         local function applyVisual()
@@ -110,8 +108,8 @@ return function(parent, settings)
                 BackgroundColor3 = enabled and Color3.fromRGB(0, 200, 120) or Color3.fromRGB(65, 65, 65)
             }):Play()
             TweenService:Create(knob, TweenInfo.new(0.12), {
-                Position = enabled and UDim2.new(1, -25, 0, 1) or UDim2.new(0, 1, 0, 1),
-                BackgroundColor3 = enabled and Color3.fromRGB(230, 255, 240) or Color3.fromRGB(180,180,180)
+                Position = enabled and UDim2.new(1, -26, 0, 2) or UDim2.new(0, 2, 0, 2),
+                BackgroundColor3 = enabled and Color3.fromRGB(235, 255, 245) or Color3.fromRGB(180, 180, 180)
             }):Play()
         end
 
@@ -125,7 +123,6 @@ return function(parent, settings)
                 BackgroundColor3 = enabled and settings.Theme.TabButtonActive or settings.Theme.TabButton
             }):Play()
         end)
-
         btn.MouseButton1Click:Connect(function()
             enabled = not enabled
             applyVisual()
@@ -136,55 +133,54 @@ return function(parent, settings)
         return btn, function(state: boolean) enabled = state; applyVisual(); if onToggle then onToggle(enabled) end end
     end
 
-    --////////////////////////////////////////////////////////////////
-    -- VISUALS: State + Per-Player Packs
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- Visual State & Pack-Management
+    ----------------------------------------------------------------
     local State = {
         TeamCheck   = false,
         NameESP     = false,
-        BoxESP      = false,        -- 2D-Box anhand 3D-BoundingBox
-        HealthESP   = false,        -- Text
+        BoxESP      = false,        -- 2D Box via Model:GetBoundingBox()
+        HealthESP   = false,        -- text
         DistanceESP = false,
-        Tracers     = false,        -- Linie ScreenBottom -> Fuß
-        Chams       = false,        -- Highlight fill/outline
+        Tracers     = false,        -- bottom center → feet
+        Chams       = false,        -- Highlight
         Fullbright  = false,
         NoFog       = false,
         Crosshair   = false,
     }
 
-    -- Lighting speichern
+    -- Save lighting to restore later
     local SavedLighting = {
         Ambient    = Lighting.Ambient,
         Brightness = Lighting.Brightness,
         FogEnd     = Lighting.FogEnd,
         FogStart   = Lighting.FogStart,
         ClockTime  = Lighting.ClockTime,
+        ColorShift_Top = Lighting.ColorShift_Top,
+        ColorShift_Bottom = Lighting.ColorShift_Bottom,
+        ExposureCompensation = Lighting.ExposureCompensation,
     }
 
-    -- Per-Player: Drawings & Instances
+    -- One pack per player: Drawing objects + Highlight
     type DrawPack = {
-        NameText: any?,
-        HPText: any?,
-        DistText: any?,
-        Box: any?,            -- Square
-        BoxOutline: any?,     -- optional Outline
-        Tracer: any?,         -- Line
-        ChamsHL: Highlight?,
+        NameText:any?, HPText:any?, DistText:any?, Box:any?, BoxOutline:any?, Tracer:any?, ChamsHL:Highlight?
     }
-    local Packs: {[Player]: DrawPack} = {}
+    local Packs : {[Player]:DrawPack} = {}
 
-    -- Connections für Cleanup
-    local Connections: {RBXScriptConnection} = {}
+    -- Keep connections for clean teardown
+    local Connections : {RBXScriptConnection} = {}
     local function bind(conn: RBXScriptConnection) table.insert(Connections, conn) end
 
-    --////////////////////////////////////////////////////////////////
-    -- Helpers: Drawing Factory & Safe Remove
-    --////////////////////////////////////////////////////////////////
-    local function newDrawing(kind: string, props: table)
+    ----------------------------------------------------------------
+    -- Utilities: Drawing new / safeRemove / team check
+    ----------------------------------------------------------------
+    local function newDrawing(kind: string, props: table?)
         local ok, obj = pcall(function() return Drawing.new(kind) end)
         if not ok or not obj then return nil end
-        for k,v in pairs(props or {}) do
-            pcall(function() obj[k] = v end)
+        if props then
+            for k,v in pairs(props) do
+                pcall(function() obj[k] = v end)
+            end
         end
         return obj
     end
@@ -194,218 +190,177 @@ return function(parent, settings)
         pcall(function()
             if typeof(obj) == "Instance" then
                 obj:Destroy()
-            elseif typeof(obj) == "table" or typeof(obj) == "userdata" then
-                if obj.Remove then obj:Remove() end
-                if obj.Destroy then obj:Destroy() end
+            elseif obj.Remove then
+                obj:Remove()
+            elseif obj.Destroy then
+                obj:Destroy()
             end
         end)
     end
 
     local function isEnemy(plr: Player)
         if not State.TeamCheck then return true end
-        local myTeam = LocalPlayer.Team
-        return plr.Team ~= myTeam
+        return plr.Team ~= LocalPlayer.Team
     end
 
-    --////////////////////////////////////////////////////////////////
-    -- Box-Projection: 3D BoundingBox -> 2D Rect (min/max)
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- BoundingBox → 2D-Rectangle (min/max der 8 Eckpunkte)
+    ----------------------------------------------------------------
     local function getScreenRectFromModel(model: Model)
-        -- Robust: nutzt GetBoundingBox (CFrame + Size) → 8 Ecken → projizieren
         local cf, size = model:GetBoundingBox()
         local sx, sy, sz = size.X/2, size.Y/2, size.Z/2
 
         local corners = {
-            Vector3.new(-sx, -sy, -sz),
-            Vector3.new(-sx, -sy,  sz),
-            Vector3.new(-sx,  sy, -sz),
-            Vector3.new(-sx,  sy,  sz),
-            Vector3.new( sx, -sy, -sz),
-            Vector3.new( sx, -sy,  sz),
-            Vector3.new( sx,  sy, -sz),
-            Vector3.new( sx,  sy,  sz),
+            Vector3.new(-sx, -sy, -sz), Vector3.new(-sx, -sy,  sz),
+            Vector3.new(-sx,  sy, -sz), Vector3.new(-sx,  sy,  sz),
+            Vector3.new( sx, -sy, -sz), Vector3.new( sx, -sy,  sz),
+            Vector3.new( sx,  sy, -sz), Vector3.new( sx,  sy,  sz),
         }
 
         local minX, minY = math.huge, math.huge
         local maxX, maxY = -math.huge, -math.huge
         local anyOnScreen = false
 
-        for _, offset in ipairs(corners) do
-            local worldPoint = cf:PointToWorldSpace(offset)
-            local v2, onScreen = Camera:WorldToViewportPoint(worldPoint)
-            if onScreen then
-                anyOnScreen = true
-            end
-            minX = math.min(minX, v2.X)
-            minY = math.min(minY, v2.Y)
-            maxX = math.max(maxX, v2.X)
-            maxY = math.max(maxY, v2.Y)
+        for _, localOffset in ipairs(corners) do
+            local worldPoint = cf:PointToWorldSpace(localOffset)
+            local v2, on = Camera:WorldToViewportPoint(worldPoint)
+            if on then anyOnScreen = true end
+            if v2.X < minX then minX = v2.X end
+            if v2.Y < minY then minY = v2.Y end
+            if v2.X > maxX then maxX = v2.X end
+            if v2.Y > maxY then maxY = v2.Y end
         end
 
-        if not anyOnScreen then
-            return nil -- komplett außerhalb des Screens
-        end
-
-        -- clamp gegen Viewport (optional)
-        local vp = Camera.ViewportSize
-        minX = math.clamp(minX, -1e4, vp.X + 1e4)
-        maxX = math.clamp(maxX, -1e4, vp.X + 1e4)
-        minY = math.clamp(minY, -1e4, vp.Y + 1e4)
-        maxY = math.clamp(maxY, -1e4, vp.Y + 1e4)
+        if not anyOnScreen then return nil end
 
         local w = math.max(1, maxX - minX)
         local h = math.max(1, maxY - minY)
         return minX, minY, w, h
     end
 
-    --////////////////////////////////////////////////////////////////
-    -- Chams via Highlight (pro Charakter, Farbe nach Team)
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- Chams (Highlight) helper
+    ----------------------------------------------------------------
     local function ensureChams(plr: Player, char: Model)
         local pack = Packs[plr] or {}
-        if pack.ChamsHL and pack.ChamsHL.Parent ~= nil then
+        if pack.ChamsHL and pack.ChamsHL.Parent then
             return pack.ChamsHL
         end
         local hl = Instance.new("Highlight")
-        hl.Name = "VIS_HL"
+        hl.Name = "VIS_Highlight"
         hl.Adornee = char
-        hl.Parent = char
-        hl.Enabled = true
-        hl.FillColor = (plr.Team == LocalPlayer.Team) and Color3.fromRGB(60, 200, 120) or Color3.fromRGB(255, 80, 80)
-        hl.OutlineColor = Color3.fromRGB(0, 0, 0)
         hl.FillTransparency = 0.75
-        hl.OutlineTransparency = 0.2
+        hl.OutlineTransparency = 0.15
+        hl.OutlineColor = Color3.fromRGB(0,0,0)
+        hl.Parent = char
         pack.ChamsHL = hl
         Packs[plr] = pack
         return hl
     end
 
-    --////////////////////////////////////////////////////////////////
-    -- Per-Player Drawing Lifecycle
-    --////////////////////////////////////////////////////////////////
-    local function clearPack(plr: Player)
-        local pack = Packs[plr]
-        if not pack then return end
-        safeRemove(pack.NameText)
-        safeRemove(pack.HPText)
-        safeRemove(pack.DistText)
-        safeRemove(pack.Box)
-        safeRemove(pack.BoxOutline)
-        safeRemove(pack.Tracer)
-        safeRemove(pack.ChamsHL)
-        Packs[plr] = nil
-    end
-
+    ----------------------------------------------------------------
+    -- Pack lifecycle
+    ----------------------------------------------------------------
     local function ensurePack(plr: Player)
         local pack = Packs[plr]
         if pack then return pack end
-        pack = {
-            NameText = nil,
-            HPText = nil,
-            DistText = nil,
-            Box = nil,
-            BoxOutline = nil,
-            Tracer = nil,
-            ChamsHL = nil,
-        }
+        pack = { NameText=nil, HPText=nil, DistText=nil, Box=nil, BoxOutline=nil, Tracer=nil, ChamsHL=nil }
         Packs[plr] = pack
         return pack
     end
 
-    --////////////////////////////////////////////////////////////////
-    -- Main Update per Player (pro Frame)
-    --////////////////////////////////////////////////////////////////
-    local FOOT_OFFSET = Vector3.new(0, 3, 0) -- HRP->Fuß (etwa)
+    local function clearPack(plr: Player)
+        local p = Packs[plr]; if not p then return end
+        safeRemove(p.NameText);   p.NameText = nil
+        safeRemove(p.HPText);     p.HPText   = nil
+        safeRemove(p.DistText);   p.DistText = nil
+        safeRemove(p.Box);        p.Box      = nil
+        safeRemove(p.BoxOutline); p.BoxOutline = nil
+        safeRemove(p.Tracer);     p.Tracer   = nil
+        safeRemove(p.ChamsHL);    p.ChamsHL  = nil
+        Packs[plr] = nil
+    end
+
+    local function destroyFeatureForAll(featureKey: string)
+        for plr, p in pairs(Packs) do
+            if featureKey == "NameESP" and p.NameText then safeRemove(p.NameText); p.NameText=nil end
+            if featureKey == "HealthESP" and p.HPText then safeRemove(p.HPText); p.HPText=nil end
+            if featureKey == "DistanceESP" and p.DistText then safeRemove(p.DistText); p.DistText=nil end
+            if featureKey == "BoxESP" then
+                if p.Box then safeRemove(p.Box); p.Box=nil end
+                if p.BoxOutline then safeRemove(p.BoxOutline); p.BoxOutline=nil end
+            end
+            if featureKey == "Tracers" and p.Tracer then safeRemove(p.Tracer); p.Tracer=nil end
+            if featureKey == "Chams" and p.ChamsHL then p.ChamsHL.Enabled=false; safeRemove(p.ChamsHL); p.ChamsHL=nil end
+        end
+    end
+
+    ----------------------------------------------------------------
+    -- Main per-player update (called every frame when features active)
+    ----------------------------------------------------------------
+    local FOOT_OFFSET = Vector3.new(0, 3, 0) -- HRP -> Fußhöhe (robust genug)
+
     local function updatePlayer(plr: Player)
-        -- existence & team
         if plr == LocalPlayer then return end
         local char = plr.Character
         if not char then clearPack(plr); return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp  = char:FindFirstChild("HumanoidRootPart")
+        local hum  = char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum then clearPack(plr); return end
         if not isEnemy(plr) then clearPack(plr); return end
 
-        -- Projection checks
-        local root2d, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-        if not onScreen then
-            -- trotzdem: Box kann offscreen sein; aber wenn root off, alles verstecken
-            clearPack(plr)
-            return
-        end
+        local root2d, on = Camera:WorldToViewportPoint(hrp.Position)
+        if not on then clearPack(plr); return end
 
         local pack = ensurePack(plr)
 
-        --////////////////////////
-        -- Name ESP (bei Füßen)
-        --////////////////////////
+        -- Name ESP (unten am Fuß)
         if State.NameESP then
             if not pack.NameText then
-                pack.NameText = newDrawing("Text", {
-                    Center = true, Outline = true, Size = 14,
-                    Color = Color3.fromRGB(255,255,255), Visible = true
-                })
+                pack.NameText = newDrawing("Text", { Center=true, Outline=true, Size=14, Color=Color3.fromRGB(255,255,255), Visible=true })
             end
-            local foot = Camera:WorldToViewportPoint(hrp.Position - FOOT_OFFSET)
+            local foot2d = Camera:WorldToViewportPoint(hrp.Position - FOOT_OFFSET)
             pack.NameText.Text     = plr.Name
-            pack.NameText.Position = Vector2.new(foot.X, foot.Y + 14)
+            pack.NameText.Position = Vector2.new(foot2d.X, foot2d.Y + 14)
             pack.NameText.Visible  = true
         else
-            safeRemove(pack.NameText); pack.NameText = nil
+            if pack.NameText then safeRemove(pack.NameText); pack.NameText=nil end
         end
 
-        --////////////////////////
         -- Health ESP (Text)
-        --////////////////////////
         if State.HealthESP then
             if not pack.HPText then
-                pack.HPText = newDrawing("Text", {
-                    Center = true, Outline = true, Size = 14,
-                    Color = Color3.fromRGB(0,255,0), Visible = true
-                })
+                pack.HPText = newDrawing("Text", { Center=true, Outline=true, Size=14, Color=Color3.fromRGB(0,255,0), Visible=true })
             end
-            local hp = math.max(0, math.floor(hum.Health + 0.5))
-            pack.HPText.Text     = ("HP: %d"):format(hp)
+            pack.HPText.Text     = ("HP: %d"):format(math.max(0, math.floor(hum.Health + 0.5)))
             pack.HPText.Position = Vector2.new(root2d.X, root2d.Y - 30)
             pack.HPText.Visible  = true
         else
-            safeRemove(pack.HPText); pack.HPText = nil
+            if pack.HPText then safeRemove(pack.HPText); pack.HPText=nil end
         end
 
-        --////////////////////////
-        -- Distance ESP (Text)
-        --////////////////////////
+        -- Distance ESP
         if State.DistanceESP then
             if not pack.DistText then
-                pack.DistText = newDrawing("Text", {
-                    Center = true, Outline = true, Size = 14,
-                    Color = Color3.fromRGB(0,200,255), Visible = true
-                })
+                pack.DistText = newDrawing("Text", { Center=true, Outline=true, Size=14, Color=Color3.fromRGB(0, 200, 255), Visible=true })
             end
             local dist = (hrp.Position - Camera.CFrame.Position).Magnitude
             pack.DistText.Text     = string.format("%.1f studs", dist)
             pack.DistText.Position = Vector2.new(root2d.X, root2d.Y - 46)
             pack.DistText.Visible  = true
         else
-            safeRemove(pack.DistText); pack.DistText = nil
+            if pack.DistText then safeRemove(pack.DistText); pack.DistText=nil end
         end
 
-        --////////////////////////
-        -- Box ESP (Hitbox-basiert)
-        --////////////////////////
+        -- Box ESP (exakte Hitbox via GetBoundingBox)
         if State.BoxESP then
-            local x, y, w, h = getScreenRectFromModel(char)
-            if x and y and w and h then
-                -- Outline (dünn), Box (fett)
+            local x,y,w,h = getScreenRectFromModel(char)
+            if x then
                 if not pack.BoxOutline then
-                    pack.BoxOutline = newDrawing("Square", {
-                        Thickness = 3, Filled = false, Color = Color3.fromRGB(0,0,0), Visible = true
-                    })
+                    pack.BoxOutline = newDrawing("Square", { Thickness=3, Filled=false, Color=Color3.fromRGB(0,0,0), Visible=true })
                 end
                 if not pack.Box then
-                    pack.Box = newDrawing("Square", {
-                        Thickness = 1.5, Filled = false, Color = Color3.fromRGB(255,0,0), Visible = true
-                    })
+                    pack.Box = newDrawing("Square", { Thickness=1.5, Filled=false, Color=Color3.fromRGB(255,0,0), Visible=true })
                 end
                 pack.BoxOutline.Size     = Vector2.new(w, h)
                 pack.BoxOutline.Position = Vector2.new(x, y)
@@ -415,113 +370,97 @@ return function(parent, settings)
                 pack.Box.Position = Vector2.new(x, y)
                 pack.Box.Visible  = true
             else
-                -- nichts sichtbar
-                safeRemove(pack.Box); pack.Box = nil
-                safeRemove(pack.BoxOutline); pack.BoxOutline = nil
+                if pack.Box then safeRemove(pack.Box); pack.Box=nil end
+                if pack.BoxOutline then safeRemove(pack.BoxOutline); pack.BoxOutline=nil end
             end
         else
-            safeRemove(pack.Box); pack.Box = nil
-            safeRemove(pack.BoxOutline); pack.BoxOutline = nil
+            if pack.Box then safeRemove(pack.Box); pack.Box=nil end
+            if pack.BoxOutline then safeRemove(pack.BoxOutline); pack.BoxOutline=nil end
         end
 
-        --////////////////////////
-        -- Tracers (ScreenBottom -> Fuß)
-        --////////////////////////
+        -- Tracers (von Screen bottom center → Fuß)
         if State.Tracers then
             if not pack.Tracer then
-                pack.Tracer = newDrawing("Line", {
-                    Thickness = 1.5, Color = Color3.fromRGB(255,255,0), Visible = true
-                })
+                pack.Tracer = newDrawing("Line", { Thickness=1.5, Color=Color3.fromRGB(255,255,0), Visible=true })
             end
             local vp = Camera.ViewportSize
             local foot2d = Camera:WorldToViewportPoint(hrp.Position - FOOT_OFFSET)
-            pack.Tracer.From    = Vector2.new(vp.X/2, vp.Y)    -- unten Mitte
+            pack.Tracer.From    = Vector2.new(vp.X/2, vp.Y)
             pack.Tracer.To      = Vector2.new(foot2d.X, foot2d.Y)
             pack.Tracer.Visible = true
         else
-            safeRemove(pack.Tracer); pack.Tracer = nil
+            if pack.Tracer then safeRemove(pack.Tracer); pack.Tracer=nil end
         end
 
-        --////////////////////////
-        -- Chams via Highlight
-        --////////////////////////
+        -- Chams (Highlight)
         if State.Chams then
             local hl = ensureChams(plr, char)
             hl.Enabled = true
             hl.Adornee = char
-            hl.FillColor = (plr.Team == LocalPlayer.Team) and Color3.fromRGB(60, 200, 120) or Color3.fromRGB(255, 80, 80)
+            hl.FillColor = (plr.Team == LocalPlayer.Team) and Color3.fromRGB(60,200,120) or Color3.fromRGB(255,80,80)
             hl.FillTransparency = 0.75
-            hl.OutlineColor = Color3.fromRGB(0, 0, 0)
-            hl.OutlineTransparency = 0.2
+            hl.OutlineColor = Color3.fromRGB(0,0,0)
+            hl.OutlineTransparency = 0.15
         else
-            if pack.ChamsHL then pack.ChamsHL.Enabled = false end
+            local p = Packs[plr]
+            if p and p.ChamsHL then p.ChamsHL.Enabled=false; safeRemove(p.ChamsHL); p.ChamsHL=nil end
         end
     end
 
-    --////////////////////////////////////////////////////////////////
-    -- Global Update Loop
-    --////////////////////////////////////////////////////////////////
-    local function updateAll()
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                updatePlayer(plr)
-            end
-        end
+    ----------------------------------------------------------------
+    -- Global update loop
+    ----------------------------------------------------------------
+    local function anyFeatureActive()
+        return State.NameESP or State.BoxESP or State.HealthESP or State.DistanceESP or State.Tracers or State.Chams or State.Crosshair
     end
 
     local RSConn = RunService.RenderStepped:Connect(function()
-        -- Nur updaten, wenn etwas aktiv ist (spart Ressourcen)
-        if State.NameESP or State.BoxESP or State.HealthESP or State.DistanceESP or State.Tracers or State.Chams or State.Crosshair then
-            updateAll()
-        else
-            -- Alles aus → Packs hart leeren (nur einmal), sonst nix tun
-            for plr,_ in pairs(Packs) do
-                clearPack(plr)
+        if anyFeatureActive() then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then
+                    updatePlayer(plr)
+                end
             end
         end
     end)
-    bind(RSConn)
+    table.insert(Connections, RSConn)
 
-    --////////////////////////////////////////////////////////////////
-    -- Crosshair (Drawing)
-    --////////////////////////////////////////////////////////////////
-    local CrosshairLines = {H=nil, V=nil}
+    ----------------------------------------------------------------
+    -- Crosshair (Drawing, 2 Linien)
+    ----------------------------------------------------------------
+    local Crosshair = { H=nil, V=nil }
     local function updateCrosshair()
-        local enable = State.Crosshair
-        if enable then
-            if not CrosshairLines.H then
-                CrosshairLines.H = newDrawing("Line", {Thickness = 1.5, Color = Color3.fromRGB(255,255,255), Visible = true})
-            end
-            if not CrosshairLines.V then
-                CrosshairLines.V = newDrawing("Line", {Thickness = 1.5, Color = Color3.fromRGB(255,255,255), Visible = true})
-            end
+        if State.Crosshair then
+            if not Crosshair.H then Crosshair.H = newDrawing("Line", {Thickness=1.5, Color=Color3.fromRGB(255,255,255), Visible=true}) end
+            if not Crosshair.V then Crosshair.V = newDrawing("Line", {Thickness=1.5, Color=Color3.fromRGB(255,255,255), Visible=true}) end
             local vp = Camera.ViewportSize
             local cx, cy = vp.X/2, vp.Y/2
-            CrosshairLines.H.From, CrosshairLines.H.To = Vector2.new(cx-10, cy), Vector2.new(cx+10, cy)
-            CrosshairLines.V.From, CrosshairLines.V.To = Vector2.new(cx, cy-10), Vector2.new(cx, cy+10)
-            CrosshairLines.H.Visible = true
-            CrosshairLines.V.Visible = true
+            Crosshair.H.From, Crosshair.H.To = Vector2.new(cx-10, cy), Vector2.new(cx+10, cy)
+            Crosshair.V.From, Crosshair.V.To = Vector2.new(cx, cy-10), Vector2.new(cx, cy+10)
+            Crosshair.H.Visible = true
+            Crosshair.V.Visible = true
         else
-            if CrosshairLines.H then CrosshairLines.H.Visible = false end
-            if CrosshairLines.V then CrosshairLines.V.Visible = false end
+            if Crosshair.H then Crosshair.H.Visible=false; safeRemove(Crosshair.H); Crosshair.H=nil end
+            if Crosshair.V then Crosshair.V.Visible=false; safeRemove(Crosshair.V); Crosshair.V=nil end
         end
     end
-
     local CHConn = RunService.RenderStepped:Connect(updateCrosshair)
-    bind(CHConn)
+    table.insert(Connections, CHConn)
 
-    --////////////////////////////////////////////////////////////////
-    -- Lighting / Fog
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- Lighting / Fog (apply + restore)
+    ----------------------------------------------------------------
     local function applyLighting()
         if State.Fullbright then
             Lighting.Brightness = 2
-            Lighting.Ambient    = Color3.new(1,1,1)
-            Lighting.ClockTime  = 14
+            Lighting.Ambient = Color3.new(1,1,1)
+            Lighting.ClockTime = 14
+            Lighting.ExposureCompensation = 0.1
         else
+            Lighting.Ambient = SavedLighting.Ambient
             Lighting.Brightness = SavedLighting.Brightness
-            Lighting.Ambient    = SavedLighting.Ambient
-            Lighting.ClockTime  = SavedLighting.ClockTime
+            Lighting.ClockTime = SavedLighting.ClockTime
+            Lighting.ExposureCompensation = SavedLighting.ExposureCompensation
         end
 
         if State.NoFog then
@@ -533,72 +472,79 @@ return function(parent, settings)
         end
     end
 
-    --////////////////////////////////////////////////////////////////
-    -- Player Join/Leave Handling
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- Player Join/Leave — sofortiges Hinzufügen/Entfernen
+    ----------------------------------------------------------------
     local function hookPlayer(plr: Player)
         if plr == LocalPlayer then return end
-        bind(plr.CharacterAdded:Connect(function(char)
-            -- kurze Wartezeit bis HRP/Humanoid existieren
+        table.insert(Connections, plr.CharacterAdded:Connect(function(char)
             char:WaitForChild("HumanoidRootPart", 5)
             char:WaitForChild("Humanoid", 5)
-            -- sofort ESP anwenden, wenn toggles aktiv
-            updatePlayer(plr)
+            task.defer(function()
+                if anyFeatureActive() then updatePlayer(plr) end
+            end)
         end))
-        -- falls Charakter schon da
         if plr.Character then
-            task.defer(function() updatePlayer(plr) end)
+            task.defer(function()
+                if anyFeatureActive() then updatePlayer(plr) end
+            end)
         end
     end
 
-    for _,plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end
-    bind(Players.PlayerAdded:Connect(hookPlayer))
-    bind(Players.PlayerRemoving:Connect(function(plr)
-        clearPack(plr) -- ESP/Tracer/Box usw. sofort entfernen
+    for _, plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end
+    table.insert(Connections, Players.PlayerAdded:Connect(hookPlayer))
+    table.insert(Connections, Players.PlayerRemoving:Connect(function(plr)
+        clearPack(plr) -- ALLES löschen, sobald er leavt
     end))
 
-    --////////////////////////////////////////////////////////////////
-    -- UI: Toggles
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- UI — Toggles (mit sofortigem globalem Cleanup bei „OFF“)
+    ----------------------------------------------------------------
     makeSection("ESP / Overlays")
 
     makeToggle("Name ESP (unten)", false, function(v)
         State.NameESP = v
+        if not v then destroyFeatureForAll("NameESP") end
     end)
 
-    makeToggle("Box ESP (Hitbox)", false, function(v)
+    makeToggle("Box ESP (Hitbox genau)", false, function(v)
         State.BoxESP = v
+        if not v then destroyFeatureForAll("BoxESP") end
     end)
 
     makeToggle("Health ESP (Text)", false, function(v)
         State.HealthESP = v
+        if not v then destroyFeatureForAll("HealthESP") end
     end)
 
     makeToggle("Distance ESP", false, function(v)
         State.DistanceESP = v
+        if not v then destroyFeatureForAll("DistanceESP") end
     end)
 
     makeToggle("Tracers (Bottom → Fuß)", false, function(v)
         State.Tracers = v
+        if not v then destroyFeatureForAll("Tracers") end
     end)
 
     makeToggle("Team Check", false, function(v)
         State.TeamCheck = v
-        -- Bei Änderung sofort neu zuweisen
-        for _,plr in ipairs(Players:GetPlayers()) do
+        -- sofort neu anwenden (Spieler, die vorher gefiltert wurden, könnten jetzt sichtbar sein)
+        for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer then
-                updatePlayer(plr)
+                if v then
+                    -- im Zweifel neu zeichnen (wird in RenderStepped ohnehin aktualisiert)
+                    updatePlayer(plr)
+                else
+                    updatePlayer(plr)
+                end
             end
         end
     end)
 
     makeToggle("Chams (Highlight)", false, function(v)
         State.Chams = v
-        if not v then
-            for _, pack in pairs(Packs) do
-                if pack.ChamsHL then pack.ChamsHL.Enabled = false end
-            end
-        end
+        if not v then destroyFeatureForAll("Chams") end
     end)
 
     makeSection("Lighting / HUD")
@@ -615,35 +561,39 @@ return function(parent, settings)
 
     makeToggle("Crosshair", false, function(v)
         State.Crosshair = v
+        if not v then updateCrosshair() end
     end)
 
-    --////////////////////////////////////////////////////////////////
-    -- Cleanup bei Tab-Destroy
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- Cleanup on Tab destroy (alles restoren/löschen)
+    ----------------------------------------------------------------
     frame.Destroying:Connect(function()
-        -- Drawings/Kits löschen
+        -- Drawings pro Spieler
         for plr,_ in pairs(Packs) do
             clearPack(plr)
         end
 
-        if CrosshairLines.H then safeRemove(CrosshairLines.H); CrosshairLines.H=nil end
-        if CrosshairLines.V then safeRemove(CrosshairLines.V); CrosshairLines.V=nil end
+        -- Crosshair
+        if Crosshair.H then safeRemove(Crosshair.H); Crosshair.H=nil end
+        if Crosshair.V then safeRemove(Crosshair.V); Crosshair.V=nil end
 
-        for _,c in ipairs(Connections) do
-            pcall(function() c:Disconnect() end)
-        end
+        -- Connections
+        for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
         table.clear(Connections)
 
-        -- Lighting zurücksetzen
-        Lighting.Ambient    = SavedLighting.Ambient
+        -- Lighting restore
+        Lighting.Ambient = SavedLighting.Ambient
         Lighting.Brightness = SavedLighting.Brightness
-        Lighting.FogEnd     = SavedLighting.FogEnd
-        Lighting.FogStart   = SavedLighting.FogStart
-        Lighting.ClockTime  = SavedLighting.ClockTime
+        Lighting.FogEnd = SavedLighting.FogEnd
+        Lighting.FogStart = SavedLighting.FogStart
+        Lighting.ClockTime = SavedLighting.ClockTime
+        Lighting.ColorShift_Top = SavedLighting.ColorShift_Top
+        Lighting.ColorShift_Bottom = SavedLighting.ColorShift_Bottom
+        Lighting.ExposureCompensation = SavedLighting.ExposureCompensation
     end)
 
-    --////////////////////////////////////////////////////////////////
-    -- Return Frame (Tab-Container)
-    --////////////////////////////////////////////////////////////////
+    ----------------------------------------------------------------
+    -- Return
+    ----------------------------------------------------------------
     return frame
 end
