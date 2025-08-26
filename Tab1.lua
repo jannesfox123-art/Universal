@@ -290,7 +290,7 @@ return function(parent, settings)
     -- Fly
     local flyConn -- RenderStepped loop
     local bodyGyro, bodyVel
-    local flySpeed = 50
+    local flySpeed = 1000
     local function startFly()
         if flyConn then flyConn:Disconnect() flyConn = nil end
         if bodyGyro then bodyGyro:Destroy() end
